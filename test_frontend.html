@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Integration Test</title>
+</head>
+<body>
+    <h1>Frontend-Backend Integration Test</h1>
+    <div id="result"></div>
+    
+    <script>
+        async function testAPI() {
+            try {
+                console.log('테스트 시작...');
+                const response = await fetch('http://localhost:8000/api/conversation', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-User-Id': 'test-user'
+                    },
+                    body: JSON.stringify({
+                        message: 'JavaScript 통합 테스트'
+                    })
+                });
+                
+                const data = await response.json();
+                document.getElementById('result').innerHTML = 
+                    '<h2>성공!</h2><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                console.log('테스트 성공:', data);
+            } catch (error) {
+                document.getElementById('result').innerHTML = 
+                    '<h2>오류!</h2><p>' + error.message + '</p>';
+                console.error('테스트 실패:', error);
+            }
+        }
+        
+        // 페이지 로드 후 자동 실행
+        window.onload = testAPI;
+    </script>
+</body>
+</html>
