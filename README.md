@@ -37,7 +37,9 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # 4. 환경변수 설정
-export ANTHROPIC_API_KEY="your-claude-api-key"
+# .env.local 파일 생성 (이미 생성됨)
+cp .env.local.example .env.local  # 예시 파일이 있다면
+# 또는 직접 .env.local 파일의 ANTHROPIC_API_KEY 값을 수정
 
 # 5. 서버 실행
 python main.py

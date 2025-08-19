@@ -4,3 +4,4 @@ websockets==14.1
 docker==7.1.0
 google-cloud-firestore==2.20.0
 python-multipart==0.0.19
+python-dotenv==1.0.0
