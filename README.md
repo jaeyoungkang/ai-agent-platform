@@ -155,12 +155,24 @@ docker build -t claude-workspace:latest docker/claude-workspace/
 
 ## 📚 문서
 
-- **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)**: 완전한 프로젝트 문서
-- **[_documents/example.md](_documents/example.md)**: 사용자 경험 샘플
+### 📖 통합 문서 (권장)
+- **[CONSOLIDATED_DOCUMENTATION.md](CONSOLIDATED_DOCUMENTATION.md)**: 📋 **전체 통합 문서** - 아키텍처, UX, API 등 모든 정보 포함
+
+### 📚 개별 문서 (참고용)
+- **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)**: 기존 전체 프로젝트 문서
+- **[_documents/2025-08-19/](/_documents/2025-08-19/)**: 대시보드 UX 구현 작업 내역
+- **[_documents/dashboard_ux_implementation_plan.md](_documents/dashboard_ux_implementation_plan.md)**: UX 설계 계획
+- **[_documents/architecture_analysis_update.md](_documents/architecture_analysis_update.md)**: 아키텍처 분석
 - **[websocket-server/README.md](websocket-server/README.md)**: 서버 구현 세부사항
+
+## 💡 문서 사용 가이드
+
+- **빠른 시작**: 위의 "빠른 시작" 섹션 참고
+- **전체 이해**: `CONSOLIDATED_DOCUMENTATION.md` 참고 
+- **구현 세부사항**: `_documents/` 폴더 내 개별 문서 참고
 
 ---
 
-**개발 상태**: ✅ MVP 완성 (로컬 환경)  
-**다음 목표**: 🚀 GKE 프로덕션 배포  
+**개발 상태**: ✅ 대시보드 UX 완성 + 문서 통합 완료  
+**다음 목표**: 🚀 클라우드 배포 및 확장 기능  
 **최종 업데이트**: 2025년 8월 19일
