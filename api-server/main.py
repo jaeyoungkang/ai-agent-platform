@@ -3,14 +3,26 @@ import os
 import uuid
 import json
 import traceback # 상세한 에러 로그를 위해 추가
-import subprocess  # Docker 컨테이너 실행을 위한 subprocess
 from fastapi import FastAPI, HTTPException, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+
+# Cloud Build 및 Logging 클라이언트
+try:
+    from google.cloud.devtools.cloudbuild_v1 import CloudBuildClient
+    from google.cloud.devtools.cloudbuild_v1.types import Build
+    from google.cloud import logging as cloud_logging
+    from google.auth import default
+    CLOUDBUILD_AVAILABLE = True
+except ImportError as e:
+    print(f"Cloud Build/Logging 라이브러리를 가져올 수 없습니다: {e}")
+    CLOUDBUILD_AVAILABLE = False
 
 # --- Firebase 초기화 ---
 try:
@@ -29,7 +41,7 @@ app = FastAPI()
 # CORS 설정 추가
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # 프론트엔드 주소
+    allow_origins=["*"],  # 배포 환경에서 모든 출처 허용
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,8 +49,28 @@ app.add_middleware(
 
 # --- 환경 변수 ---
 # GCP 환경 변수
-PROJECT_ID = os.environ.get("PROJECT_ID", "ai-agent-platform-469401")
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", os.environ.get("PROJECT_ID", "ai-agent-platform-469401"))
 REGION = os.environ.get("REGION", "asia-northeast3")
+
+# Cloud Build 환경 변수
+CLOUDBUILD_MOCK = os.environ.get('CLOUDBUILD_MOCK', 'true').lower() == 'true'
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+
+# Cloud Build 클라이언트 초기화
+if CLOUDBUILD_AVAILABLE:
+    try:
+        cloudbuild_client = CloudBuildClient()
+        logging_client = cloud_logging.Client() if not CLOUDBUILD_MOCK else None
+        print(f"Cloud Build 클라이언트 초기화 완료. PROJECT_ID: {PROJECT_ID}, MOCK: {CLOUDBUILD_MOCK}")
+        if logging_client:
+            print("Cloud Logging 클라이언트 초기화 완료")
+    except Exception as e:
+        print(f"Cloud Build/Logging 클라이언트 초기화 실패: {e}")
+        cloudbuild_client = None
+        logging_client = None
+else:
+    cloudbuild_client = None
+    logging_client = None
 
 
 # --- 데이터 모델 (Pydantic) - 최종 데이터 구조 반영 ---
@@ -79,11 +111,196 @@ class ConversationRequest(BaseModel):
     message: str
 
 
+# --- Cloud Build 함수 ---
+
+async def execute_claude_with_cloudbuild(prompt: str, required_packages: Optional[List[str]] = None) -> dict:
+    """Cloud Build를 사용하여 Claude Code 실행"""
+    
+    if CLOUDBUILD_MOCK:
+        return await execute_mock_response(prompt)
+    else:
+        return await execute_real_cloudbuild(prompt, required_packages)
+
+async def execute_mock_response(prompt: str) -> dict:
+    """로컬 테스트용 모의 응답"""
+    print(f"Cloud Build 모의 실행 시작. 프롬프트 길이: {len(prompt)}")
+    
+    if "에이전트" in prompt or "자동화" in prompt:
+        return {
+            "result": "안녕하세요! 어떤 에이전트를 만들고 싶으신가요? 구체적인 작업 내용과 실행 주기를 알려주시면 도움을 드리겠습니다.",
+            "status": "success"
+        }
+    else:
+        return {
+            "result": f"Claude Code 응답: {prompt[:50]}... 에 대한 처리가 완료되었습니다.",
+            "status": "success"
+        }
+
+async def execute_real_cloudbuild(prompt: str, required_packages: Optional[List[str]] = None) -> dict:
+    """실제 Cloud Build에서 Claude Code 실행"""
+    
+    if not cloudbuild_client:
+        return {"error": "Cloud Build 클라이언트가 초기화되지 않았습니다", "status": "error"}
+    
+    try:
+        print(f"Cloud Build 실제 실행 시작. 프롬프트 길이: {len(prompt)}")
+        
+        # 프롬프트 이스케이프 처리 (작은따옴표 방식)
+        escaped_prompt = prompt.replace("'", "'\"'\"'").replace('\n', '\\n')
+        
+        # 패키지 설치 명령 구성
+        package_install = "pip install claude-cli"
+        if required_packages:
+            package_list = " ".join(required_packages)
+            package_install += f" {package_list}"
+        
+        # Cloud Build 설정
+        build_config = {
+            "steps": [{
+                "name": "python:3.9",
+                "entrypoint": "bash",
+                "args": [
+                    "-c",
+                    f"{package_install} && echo '{escaped_prompt}' | claude --print --output-format json --permission-mode acceptEdits"
+                ],
+                "env": [
+                    f"ANTHROPIC_API_KEY={ANTHROPIC_API_KEY}"
+                ] if ANTHROPIC_API_KEY else []
+            }],
+            "timeout": "300s"
+        }
+        
+        print(f"Cloud Build 실행 시작. PROJECT_ID: {PROJECT_ID}")
+        
+        # Cloud Build 실행
+        operation = cloudbuild_client.create_build(
+            project_id=PROJECT_ID,
+            build=build_config
+        )
+        
+        print(f"Cloud Build 작업 생성 완료: {operation.name}")
+        
+        # 실행 완료 대기 (5분 타임아웃)
+        result = operation.result(timeout=300)
+        
+        print(f"Cloud Build 실행 완료. 상태: {result.status}")
+        
+        if result.status == Build.Status.SUCCESS:
+            # 로그에서 Claude 응답 추출
+            claude_response = await get_cloudbuild_logs(result.id)
+            return {"result": claude_response, "status": "success"}
+        
+        elif result.status == Build.Status.FAILURE:
+            error_logs = await get_cloudbuild_logs(result.id)
+            return {"error": f"Cloud Build 실행 실패: {error_logs}", "status": "failed"}
+            
+        else:
+            return {"error": f"Cloud Build 상태 불명: {result.status}", "status": "unknown"}
+            
+    except Exception as e:
+        print(f"Cloud Build 실행 중 오류: {str(e)}")
+        return {"error": str(e), "status": "error"}
+
+async def get_cloudbuild_logs(build_id: str) -> str:
+    """Cloud Build 실행 로그에서 Claude 응답 추출"""
+    
+    if not logging_client:
+        return "로깅 클라이언트가 초기화되지 않았습니다"
+    
+    try:
+        print(f"Cloud Build 로그 조회 시작. Build ID: {build_id}")
+        
+        # Cloud Build 로그 필터 (빌드 ID 기준)
+        filter_str = f'resource.type="build" AND resource.labels.build_id="{build_id}"'
+        
+        # 최근 로그부터 조회 (5분 이내)
+        import datetime
+        end_time = datetime.datetime.utcnow()
+        start_time = end_time - datetime.timedelta(minutes=5)
+        
+        entries = logging_client.list_entries(
+            filter_=filter_str,
+            order_by=cloud_logging.DESCENDING,
+            page_size=100
+        )
+        
+        # 로그 엔트리에서 Claude 응답 찾기
+        for entry in entries:
+            if hasattr(entry, 'payload'):
+                log_text = ""
+                if hasattr(entry.payload, 'text_payload'):
+                    log_text = entry.payload.text_payload
+                elif hasattr(entry.payload, 'json_payload'):
+                    log_text = str(entry.payload.json_payload)
+                else:
+                    log_text = str(entry.payload)
+                
+                # Claude JSON 응답 패턴 찾기
+                claude_response = parse_claude_response_from_log(log_text)
+                if claude_response and claude_response != log_text:
+                    print(f"Cloud Build 로그에서 Claude 응답 추출 성공: {claude_response[:100]}...")
+                    return claude_response
+        
+        return "로그에서 Claude 응답을 찾을 수 없습니다"
+        
+    except Exception as e:
+        print(f"Cloud Build 로그 조회 중 오류: {str(e)}")
+        return f"로그 조회 오류: {str(e)}"
+
+def parse_claude_response_from_log(log_text: str) -> str:
+    """로그에서 JSON 응답 추출"""
+    import re
+    
+    if not log_text:
+        return ""
+    
+    try:
+        # JSON 패턴 찾기 (Claude의 출력 형식)
+        json_patterns = [
+            r'\{[^{}]*"result"[^{}]*"[^"]*"[^{}]*\}',  # 단순 JSON
+            r'\{.*?"result".*?\}',  # 복잡한 JSON (non-greedy)
+            r'\{"result":[^}]+\}',  # result로 시작하는 JSON
+        ]
+        
+        for pattern in json_patterns:
+            json_match = re.search(pattern, log_text, re.DOTALL)
+            if json_match:
+                try:
+                    result_json = json.loads(json_match.group(0))
+                    if 'result' in result_json:
+                        return result_json['result']
+                except json.JSONDecodeError:
+                    continue
+        
+        # JSON 파싱 실패 시 텍스트에서 직접 추출
+        if 'result' in log_text.lower():
+            lines = log_text.split('\n')
+            for line in lines:
+                if 'result' in line.lower() and len(line.strip()) > 10:
+                    return line.strip()
+        
+        # 마지막으로 전체 로그 텍스트 반환 (처음 200자)
+        return log_text[:200] + "..." if len(log_text) > 200 else log_text
+        
+    except Exception as e:
+        print(f"로그 파싱 중 오류: {str(e)}")
+        return log_text[:100] + "..." if len(log_text) > 100 else log_text
+
+# --- 정적 파일 서빙 ---
+# 정적 파일 마운트 (static 디렉토리가 있는 경우에만)
+import os
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # --- API 엔드포인트 ---
 
 @app.get("/")
-def read_root():
-    return {"status": "ok", "service": "api-server"}
+def serve_frontend():
+    """프론트엔드 index.html 서빙"""
+    if os.path.exists("static/index.html"):
+        return FileResponse('static/index.html')
+    else:
+        return {"status": "ok", "service": "api-server", "note": "Frontend not available"}
 
 @app.post("/api/conversation")
 async def conversation(request: ConversationRequest, x_user_id: str = Header(...)):
@@ -118,44 +335,18 @@ async def conversation(request: ConversationRequest, x_user_id: str = Header(...
         # Claude Code CLI 호출을 위한 프롬프트 구성
         prompt = build_agent_creation_prompt(conversation_history, request.message)
         
-        print(f"[{conversation_id}] Claude Code CLI 호출 시작...")
+        print(f"[{conversation_id}] Cloud Build로 Claude Code CLI 호출 시작...")
         
-        # Docker 컨테이너에서 Claude Code CLI 실행
-        import subprocess
-        container_name = f"claude-{uuid.uuid4().hex[:8]}"
+        # Cloud Build를 사용하여 Claude Code CLI 실행
+        cloud_result = await execute_claude_with_cloudbuild(prompt)
         
-        # 프롬프트 이스케이프 처리
-        escaped_prompt = prompt.replace('"', '\\"').replace('\n', '\\n').replace('\\', '\\\\')
+        if cloud_result.get("status") == "error":
+            print(f"[{conversation_id}] Cloud Build 오류: {cloud_result.get('error')}")
+            raise HTTPException(status_code=500, detail="Cloud Build 실행 실패")
         
-        command = [
-            "docker", "run", "--rm",
-            "--name", container_name,
-            "--memory=1g", "--cpus=1",
-            # "--network=none",  # 임시로 네트워크 허용 (claude-cli 설치용)
-            "-i",
-            "python:3.11-slim",  # 임시로 기본 이미지 사용
-            "sh", "-c", f'python -c "import json; print(json.dumps({{\\"result\\": \\"테스트 응답: {escaped_prompt[:50]}...\\"}}));"'
-        ]
-        
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=120  # Docker 컨테이너는 시간이 더 필요
-        )
-        
-        if result.returncode != 0:
-            print(f"[{conversation_id}] Claude Code CLI 오류: {result.stderr}")
-            raise HTTPException(status_code=500, detail="Claude Code CLI 호출 실패")
-        
-        # Claude 응답 파싱
-        try:
-            claude_output = json.loads(result.stdout)
-            # Claude Code CLI의 JSON 응답에서 실제 텍스트 추출
-            response_text = claude_output.get("result", claude_output.get("content", result.stdout))
-            print(f"[{conversation_id}] Claude 원본 응답: {response_text[:200]}...")
-        except json.JSONDecodeError:
-            response_text = result.stdout
+        # Cloud Build 응답 파싱
+        response_text = cloud_result.get("result", cloud_result.get("output", "응답 없음"))
+        print(f"[{conversation_id}] Cloud Build 응답: {response_text[:200]}...")
         
         # 응답에서 상태, 컴포넌트 등 추출
         response_data = parse_claude_response(response_text)
@@ -197,11 +388,6 @@ async def conversation(request: ConversationRequest, x_user_id: str = Header(...
             "agentCreated": response_data.get("agentCreated", False)
         }
         
-    except subprocess.TimeoutExpired:
-        # 타임아웃 시 컨테이너 강제 종료
-        subprocess.run(["docker", "kill", container_name], capture_output=True)
-        print(f"[{conversation_id}] Claude Code CLI 타임아웃")
-        raise HTTPException(status_code=408, detail="Claude Code CLI 응답 타임아웃")
     except Exception as e:
         print(f"--- 에러 발생: conversation API ---")
         traceback.print_exc()
@@ -381,9 +567,9 @@ async def run_agent(agent_id: str, background_tasks: BackgroundTasks, x_user_id:
     }
     execution_ref.set(execution_data)
 
-    # 3. 백그라운드 작업으로 Docker 컨테이너에서 실행
+    # 3. 백그라운드 작업으로 Cloud Build에서 실행
     background_tasks.add_task(
-        execute_agent_in_docker,
+        execute_agent_with_cloudbuild,
         execution_id,
         agent_data.get("prompt", ""),
         agent_data.get("requiredPackages", [])
@@ -391,76 +577,41 @@ async def run_agent(agent_id: str, background_tasks: BackgroundTasks, x_user_id:
 
     return {"message": "Agent execution request accepted", "executionId": execution_id}
 
-def execute_agent_in_docker(execution_id: str, prompt: str, required_packages: List[str]):
-    """Docker 컨테이너에서 에이전트를 실행하는 백그라운드 함수"""
+def execute_agent_with_cloudbuild(execution_id: str, prompt: str, required_packages: List[str]):
+    """Cloud Build에서 에이전트를 실행하는 백그라운드 함수"""
     execution_ref = db.collection('executions').document(execution_id)
-    print(f"[{execution_id}] 백그라운드 Docker 실행 시작")
+    print(f"[{execution_id}] 백그라운드 Cloud Build 실행 시작")
     
     try:
         # 상태를 preparing으로 업데이트
         print(f"[{execution_id}] 상태를 'preparing'으로 업데이트")
         execution_ref.update({"status": "preparing"})
         
-        # Docker 컨테이너 이름 생성
-        container_name = f"agent-{execution_id[:8]}"
-        
-        # 패키지 설치 명령 구성
-        package_install = ""
-        if required_packages:
-            package_list = " ".join(required_packages)
-            package_install = f"pip install {package_list} && "
-        
-        # 프롬프트 이스케이프 처리
-        escaped_prompt = prompt.replace('"', '\\"').replace('\n', '\\n').replace('\\', '\\\\')
-        
-        print(f"[{execution_id}] Docker 컨테이너 실행: {container_name}")
-        
         # 상태를 running으로 업데이트
         execution_ref.update({"status": "running"})
         
-        # Docker 명령 구성
-        command = [
-            "docker", "run", "--rm",
-            "--name", container_name,
-            "--memory=1g", "--cpus=1",
-            # "--network=none",  # 임시로 네트워크 허용 (claude-cli 설치용)
-            "-i",
-            "python:3.11-slim",
-            "sh", "-c", f'python -c "import json; print(json.dumps({{\\"result\\": \\"에이전트 실행 테스트: {escaped_prompt[:50]}...\\"}}));"'
-        ]
+        print(f"[{execution_id}] Cloud Build로 에이전트 실행 시작")
         
-        # Docker 컨테이너 실행
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=600  # 10분 타임아웃
-        )
+        # Cloud Build 실행 (동기 방식으로 호출)
+        import asyncio
+        result = asyncio.run(execute_claude_with_cloudbuild(prompt, required_packages))
         
-        print(f"[{execution_id}] Docker 실행 완료. Return Code: {result.returncode}")
-        print(f"[{execution_id}] stdout: {result.stdout[:500]}...")
-        print(f"[{execution_id}] stderr: {result.stderr[:500]}...")
+        print(f"[{execution_id}] Cloud Build 실행 완료. 결과: {result}")
         
         # 결과 처리
-        if result.returncode == 0 and result.stdout:
+        if result.get("status") == "success":
             # 성공
             print(f"[{execution_id}] 실행 성공")
-            try:
-                output_data = json.loads(result.stdout)
-                execution_result = output_data.get("result", result.stdout)
-                token_usage = output_data.get("usage", {})
-            except json.JSONDecodeError:
-                execution_result = result.stdout
-                token_usage = {}
-                
+            execution_result = result.get("result", result.get("output", ""))
+            
             final_update = {
                 "status": "success",
                 "endTime": firestore.SERVER_TIMESTAMP,
                 "result": execution_result,
-                "executionSteps": ["Docker 컨테이너에서 에이전트 실행 완료"],
+                "executionSteps": ["Cloud Build에서 에이전트 실행 완료"],
                 "tokenUsage": {
-                    "inputTokens": token_usage.get("input_tokens", 0),
-                    "outputTokens": token_usage.get("output_tokens", 0)
+                    "inputTokens": 0,  # TODO: 실제 토큰 사용량 계산
+                    "outputTokens": 0
                 }
             }
             execution_ref.update(final_update)
@@ -468,7 +619,7 @@ def execute_agent_in_docker(execution_id: str, prompt: str, required_packages: L
         else:
             # 실패
             print(f"[{execution_id}] 실행 실패")
-            error_message = result.stderr or result.stdout or "알 수 없는 오류가 발생했습니다."
+            error_message = result.get("error", "알 수 없는 오류가 발생했습니다.")
             execution_ref.update({
                 "status": "error",
                 "endTime": firestore.SERVER_TIMESTAMP,
@@ -476,15 +627,6 @@ def execute_agent_in_docker(execution_id: str, prompt: str, required_packages: L
             })
             print(f"[{execution_id}] 실패 상태를 Firestore에 기록")
             
-    except subprocess.TimeoutExpired:
-        # 타임아웃 처리
-        print(f"[{execution_id}] 타임아웃 발생, 컨테이너 강제 종료")
-        subprocess.run(["docker", "kill", container_name], capture_output=True)
-        execution_ref.update({
-            "status": "error",
-            "endTime": firestore.SERVER_TIMESTAMP,
-            "errorMessage": "실행 시간 초과로 인한 타임아웃"
-        })
     except Exception as e:
         # 예외 처리
         print(f"[{execution_id}] 예외 발생: {str(e)}")

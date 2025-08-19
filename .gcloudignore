@@ -1,0 +1,12 @@
+# 빌드에서 제외할 파일들
+.git
+.gitignore
+README.md
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+_documents/
+*.md
+deploy-gcp.sh
+.gcloudignore

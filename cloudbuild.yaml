@@ -1,0 +1,24 @@
+steps:
+# API 서버 빌드 (루트 디렉토리에서 빌드)
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-platform/ai-agent-platform', '-f', 'api-server/Dockerfile', '.']
+
+# Artifact Registry 푸시
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-platform/ai-agent-platform']
+
+# Cloud Run 배포
+- name: 'gcr.io/cloud-builders/gcloud'
+  args:
+  - 'run'
+  - 'deploy'
+  - 'ai-agent-platform'
+  - '--image=asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-platform/ai-agent-platform'
+  - '--platform=managed'
+  - '--region=asia-northeast3'
+  - '--allow-unauthenticated'
+  - '--port=8080'
+  - '--set-env-vars=CLOUDBUILD_MOCK=false,ANTHROPIC_API_KEY=${_ANTHROPIC_API_KEY}'
+
+images:
+- asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-platform/ai-agent-platform
