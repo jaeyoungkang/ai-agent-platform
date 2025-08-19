@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 에이전트 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 전문적인 사무 스타일 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+            background-color: #f8f9fa;
+            color: #343a40;
+        }
+        
+        /* 에이전트 카드 - 사무적 스타일 */
+        .agent-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .agent-card:hover {
+            border-color: #6c757d;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* 새 에이전트 생성 카드 - 전문적 스타일 */
+        .create-agent-card {
+            background: #495057;
+            color: white;
+            cursor: pointer;
+            border: 2px dashed #6c757d;
+            transition: all 0.2s ease;
+        }
+        
+        .create-agent-card:hover {
+            background: #343a40;
+            border-color: #495057;
+        }
+        
+        .create-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            font-weight: 300;
+        }
+        
+        /* 상태 표시 - 전문적 색상 */
+        .status-draft { background: #6c757d; }
+        .status-active { background: #28a745; }
+        .status-running { background: #007bff; animation: pulse 2s infinite; }
+        .status-paused { background: #ffc107; }
+        .status-error { background: #dc3545; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        /* 통계 카드 - 사무적 스타일 */
+        .stat-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            color: #495057;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 600;
+            display: block;
+            margin-top: 0.5rem;
+            color: #007bff;
+        }
+        
+        /* 헤더 스타일 */
+        .header-gradient {
+            background: linear-gradient(90deg, #495057 0%, #343a40 100%);
+        }
+        
+        /* 버튼 스타일 */
+        .btn-primary {
+            background: #007bff;
+            border-color: #007bff;
+            font-weight: 500;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+            border-color: #0056b3;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- 헤더 -->
+    <header class="header-gradient shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-white rounded flex items-center justify-center">
+                        <span class="text-gray-700 font-semibold text-sm">AI</span>
+                    </div>
+                    <h1 class="text-xl font-semibold text-white">에이전트 관리 시스템</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-sm text-gray-200">
+                        사용자 ID: <span id="user-id" class="font-mono text-white">-</span>
+                    </div>
+                    <button id="create-agent-btn" class="btn-primary text-white px-4 py-2 rounded transition-colors">
+                        + 새 에이전트
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 콘텐츠 -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- 요약 통계 -->
+        <section class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="stat-card">
+                <h3 class="text-lg font-medium">총 에이전트</h3>
+                <span id="total-agents" class="stat-number">0</span>
+            </div>
+            <div class="stat-card">
+                <h3 class="text-lg font-medium">활성 에이전트</h3>
+                <span id="active-agents" class="stat-number">0</span>
+            </div>
+            <div class="stat-card">
+                <h3 class="text-lg font-medium">이번 달 실행</h3>
+                <span id="monthly-runs" class="stat-number">0</span>
+            </div>
+            <div class="stat-card">
+                <h3 class="text-lg font-medium">성공률</h3>
+                <span id="success-rate" class="stat-number">-</span>
+            </div>
+        </section>
+
+        <!-- 에이전트 관리 -->
+        <section>
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-semibold text-gray-900">내 에이전트</h2>
+                <div class="flex space-x-3">
+                    <select id="status-filter" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        <option value="">모든 상태</option>
+                        <option value="active">활성</option>
+                        <option value="draft">초안</option>
+                        <option value="paused">일시정지</option>
+                        <option value="error">오류</option>
+                    </select>
+                    <input type="search" id="search-input" placeholder="에이전트 검색..." 
+                           class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64">
+                </div>
+            </div>
+
+            <!-- 에이전트 카드 그리드 -->
+            <div id="agent-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                
+                <!-- 새 에이전트 생성 카드 -->
+                <div class="create-agent-card rounded p-6 text-center">
+                    <div class="create-icon">+</div>
+                    <h3 class="text-lg font-medium mb-2">새 에이전트 생성</h3>
+                    <p class="text-sm opacity-80">Claude와 상호작용하여 AI 에이전트를 개발합니다</p>
+                </div>
+
+                <!-- 로딩 상태 -->
+                <div id="loading-message" class="col-span-full text-center py-12">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <p class="text-gray-500 mt-2">에이전트 목록을 불러오는 중...</p>
+                </div>
+
+                <!-- 빈 상태 -->
+                <div id="empty-message" class="col-span-full text-center py-12 hidden">
+                    <div class="text-4xl mb-4 text-gray-400">📋</div>
+                    <h3 class="text-lg font-medium text-gray-700 mb-2">등록된 에이전트가 없습니다</h3>
+                    <p class="text-gray-500 mb-4">새 에이전트를 생성하여 업무를 시작하세요</p>
+                    <button class="btn-primary text-white px-6 py-2 rounded transition-colors">
+                        에이전트 생성
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        class AgentDashboard {
+            constructor() {
+                this.agents = [];
+                this.filteredAgents = [];
+                this.userId = null;
+                
+                this.initializeAuth();
+                this.setupEventListeners();
+            }
+            
+            async initializeAuth() {
+                try {
+                    // 게스트 세션 생성 또는 기존 세션 확인
+                    const response = await fetch('/api/auth/guest', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    if (response.ok) {
+                        const authData = await response.json();
+                        this.userId = authData.user_id;
+                        document.getElementById('user-id').textContent = this.userId;
+                        
+                        // 에이전트 목록 로드
+                        await this.loadAgents();
+                    } else {
+                        throw new Error('Failed to create session');
+                    }
+                } catch (error) {
+                    console.error('Authentication failed:', error);
+                    this.showError('인증에 실패했습니다.');
+                }
+            }
+            
+            setupEventListeners() {
+                // 새 에이전트 생성 버튼
+                document.getElementById('create-agent-btn').addEventListener('click', 
+                    () => this.createNewAgent());
+                
+                // 새 에이전트 생성 카드 클릭
+                document.querySelector('.create-agent-card').addEventListener('click', 
+                    () => this.createNewAgent());
+                
+                // 검색 및 필터
+                document.getElementById('search-input').addEventListener('input', 
+                    () => this.filterAgents());
+                document.getElementById('status-filter').addEventListener('change', 
+                    () => this.filterAgents());
+            }
+            
+            async loadAgents() {
+                try {
+                    const response = await fetch('/api/agents', {
+                        headers: { 'X-User-Id': this.userId }
+                    });
+                    
+                    if (response.ok) {
+                        this.agents = await response.json();
+                        this.filteredAgents = [...this.agents];
+                        this.renderAgents();
+                        this.updateStats();
+                    } else {
+                        // 에이전트가 없는 경우 빈 배열로 처리
+                        this.agents = [];
+                        this.filteredAgents = [];
+                        this.renderAgents();
+                        this.updateStats();
+                    }
+                } catch (error) {
+                    console.error('Failed to load agents:', error);
+                    this.agents = [];
+                    this.filteredAgents = [];
+                    this.renderAgents();
+                    this.updateStats();
+                }
+                
+                // 로딩 메시지 숨김
+                document.getElementById('loading-message').style.display = 'none';
+            }
+            
+            renderAgents() {
+                const grid = document.getElementById('agent-grid');
+                const createCard = document.querySelector('.create-agent-card');
+                const loadingMessage = document.getElementById('loading-message');
+                const emptyMessage = document.getElementById('empty-message');
+                
+                // 기존 에이전트 카드 제거 (생성 카드는 유지)
+                const existingCards = grid.querySelectorAll('.agent-card');
+                existingCards.forEach(card => card.remove());
+                
+                if (this.filteredAgents.length === 0) {
+                    emptyMessage.classList.remove('hidden');
+                } else {
+                    emptyMessage.classList.add('hidden');
+                    
+                    this.filteredAgents.forEach(agent => {
+                        const agentCard = this.createAgentCard(agent);
+                        grid.appendChild(agentCard);
+                    });
+                }
+            }
+            
+            createAgentCard(agent) {
+                const card = document.createElement('div');
+                card.className = 'agent-card bg-white rounded-xl p-6 shadow-sm border';
+                card.setAttribute('data-agent-id', agent.id);
+                
+                const lastRun = agent.lastRunAt ? 
+                    new Date(agent.lastRunAt).toLocaleDateString('ko-KR') : '실행 안함';
+                const successRate = agent.totalRuns > 0 ? 
+                    Math.round((agent.successfulRuns / agent.totalRuns) * 100) : 0;
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-lg text-gray-600">${agent.icon || '📄'}</span>
+                            <div class="w-2 h-2 rounded-full status-${agent.status}"></div>
+                        </div>
+                        <div class="flex space-x-1">
+                            <button class="text-gray-400 hover:text-gray-600 p-1" onclick="editAgent('${agent.id}')">
+                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
+                                </svg>
+                            </button>
+                            <button class="text-gray-400 hover:text-red-500 p-1" onclick="deleteAgent('${agent.id}')">
+                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <h3 class="text-base font-medium text-gray-900 mb-2">${agent.name}</h3>
+                    <p class="text-gray-600 text-sm mb-4 line-clamp-2">${agent.description || '설명이 없습니다.'}</p>
+                    
+                    <div class="flex justify-between text-xs text-gray-500 mb-4 border-t pt-3">
+                        <span>실행: ${agent.totalRuns}</span>
+                        <span>성공률: ${successRate}%</span>
+                        <span>${lastRun}</span>
+                    </div>
+                    
+                    <div class="flex space-x-2">
+                        <button class="flex-1 bg-gray-600 text-white text-sm py-2 px-3 rounded hover:bg-gray-700 transition-colors"
+                                onclick="editAgent('${agent.id}')">
+                            편집
+                        </button>
+                        <button class="flex-1 btn-primary text-white text-sm py-2 px-3 rounded hover:bg-blue-700 transition-colors"
+                                onclick="runAgent('${agent.id}')" ${agent.status !== 'active' ? 'disabled' : ''}>
+                            실행
+                        </button>
+                    </div>
+                `;
+                
+                return card;
+            }
+            
+            filterAgents() {
+                const searchTerm = document.getElementById('search-input').value.toLowerCase();
+                const statusFilter = document.getElementById('status-filter').value;
+                
+                this.filteredAgents = this.agents.filter(agent => {
+                    const matchesSearch = agent.name.toLowerCase().includes(searchTerm) ||
+                                        (agent.description && agent.description.toLowerCase().includes(searchTerm));
+                    const matchesStatus = !statusFilter || agent.status === statusFilter;
+                    
+                    return matchesSearch && matchesStatus;
+                });
+                
+                this.renderAgents();
+            }
+            
+            updateStats() {
+                const totalAgents = this.agents.length;
+                const activeAgents = this.agents.filter(a => a.status === 'active').length;
+                
+                let totalRuns = 0;
+                let successfulRuns = 0;
+                
+                this.agents.forEach(agent => {
+                    totalRuns += agent.totalRuns || 0;
+                    successfulRuns += agent.successfulRuns || 0;
+                });
+                
+                const successRate = totalRuns > 0 ? 
+                    `${Math.round((successfulRuns / totalRuns) * 100)}%` : '-';
+                
+                document.getElementById('total-agents').textContent = totalAgents;
+                document.getElementById('active-agents').textContent = activeAgents;
+                document.getElementById('monthly-runs').textContent = totalRuns;
+                document.getElementById('success-rate').textContent = successRate;
+            }
+            
+            async createNewAgent() {
+                try {
+                    // 새 에이전트 생성 API 호출
+                    const response = await fetch('/api/agents', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-User-Id': this.userId
+                        },
+                        body: JSON.stringify({
+                            name: `새 에이전트 ${this.agents.length + 1}`,
+                            description: '',
+                            tags: [],
+                            color: '#3B82F6',
+                            icon: '🤖'
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const agent = await response.json();
+                        
+                        // 워크스페이스 생성 및 이동
+                        const workspaceResponse = await fetch(`/api/agents/${agent.id}/workspace`, {
+                            method: 'POST',
+                            headers: { 'X-User-Id': this.userId }
+                        });
+                        
+                        if (workspaceResponse.ok) {
+                            const workspace = await workspaceResponse.json();
+                            window.location.href = `/static/workspace.html?session=${workspace.sessionId}`;
+                        } else {
+                            throw new Error('Failed to create workspace');
+                        }
+                    } else {
+                        throw new Error('Failed to create agent');
+                    }
+                } catch (error) {
+                    console.error('Failed to create agent:', error);
+                    this.showError('에이전트 생성에 실패했습니다.');
+                }
+            }
+            
+            showError(message) {
+                // 간단한 오류 표시
+                alert(message);
+            }
+        }
+        
+        // 전역 함수들 (버튼 onclick에서 사용)
+        window.editAgent = async (agentId) => {
+            try {
+                // 워크스페이스 생성 및 이동
+                const response = await fetch(`/api/agents/${agentId}/workspace`, {
+                    method: 'POST',
+                    headers: { 'X-User-Id': window.dashboard.userId }
+                });
+                
+                if (response.ok) {
+                    const workspace = await response.json();
+                    window.location.href = `/static/workspace.html?session=${workspace.sessionId}`;
+                } else {
+                    throw new Error('Failed to create workspace');
+                }
+            } catch (error) {
+                console.error('Failed to edit agent:', error);
+                alert('에이전트 편집에 실패했습니다.');
+            }
+        };
+        
+        window.runAgent = async (agentId) => {
+            try {
+                const response = await fetch(`/api/agents/${agentId}/execute`, {
+                    method: 'POST',
+                    headers: { 'X-User-Id': window.dashboard.userId }
+                });
+                
+                if (response.ok) {
+                    alert('에이전트가 실행되었습니다.');
+                    window.dashboard.loadAgents(); // 목록 새로고침
+                } else {
+                    throw new Error('Failed to run agent');
+                }
+            } catch (error) {
+                console.error('Failed to run agent:', error);
+                alert('에이전트 실행에 실패했습니다.');
+            }
+        };
+        
+        window.deleteAgent = async (agentId) => {
+            if (!confirm('정말로 이 에이전트를 삭제하시겠습니까?')) return;
+            
+            try {
+                const response = await fetch(`/api/agents/${agentId}`, {
+                    method: 'DELETE',
+                    headers: { 'X-User-Id': window.dashboard.userId }
+                });
+                
+                if (response.ok) {
+                    window.dashboard.loadAgents(); // 목록 새로고침
+                } else {
+                    throw new Error('Failed to delete agent');
+                }
+            } catch (error) {
+                console.error('Failed to delete agent:', error);
+                alert('에이전트 삭제에 실패했습니다.');
+            }
+        };
+        
+        // 애플리케이션 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            window.dashboard = new AgentDashboard();
+        });
+    </script>
+</body>
+</html>
