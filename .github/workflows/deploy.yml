@@ -43,8 +43,7 @@ jobs:
 
     - name: 'Configure Docker'
       run: |-
-        gcloud --quiet auth configure-docker gcr.io
-        gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin gcr.io
+        gcloud --quiet auth configure-docker asia-northeast3-docker.pkg.dev
 
     - name: 'Get GKE credentials'
       run: |-
@@ -54,17 +53,17 @@ jobs:
       run: |-
         cd websocket-server
         docker build --platform linux/amd64 \
-          -t "gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA" \
-          -t "gcr.io/$PROJECT_ID/$IMAGE:latest" .
+          -t "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA" \
+          -t "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:latest" .
 
     - name: 'Push Docker image'
       run: |-
-        docker push "gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA"
-        docker push "gcr.io/$PROJECT_ID/$IMAGE:latest"
+        docker push "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA"
+        docker push "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:latest"
 
     - name: 'Deploy to GKE'
       run: |-
         kubectl set image deployment/$DEPLOYMENT_NAME \
-          api-server=gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA
+          api-server=asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA
         kubectl rollout status deployment/$DEPLOYMENT_NAME
         kubectl get services -o wide
