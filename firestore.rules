@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 베타 사용자 관련 규칙
+    match /users/{userId} {
+      // 인증된 사용자만 자신의 데이터에 접근 가능
+      allow read, write: if request.auth != null 
+        && request.auth.uid == userId;
+      
+      // 베타 사용자 등록 시에는 새 문서 생성 허용
+      allow create: if request.auth != null 
+        && request.auth.uid == userId
+        && resource == null;
+    }
+    
+    // 에이전트 관련 규칙
+    match /agents/{agentId} {
+      // 인증된 사용자만 자신의 에이전트에 접근 가능
+      allow read, write: if request.auth != null 
+        && request.auth.uid == resource.data.user_id;
+      
+      // 새 에이전트 생성 허용
+      allow create: if request.auth != null 
+        && request.auth.uid == request.resource.data.user_id;
+    }
+    
+    // 워크스페이스 관련 규칙
+    match /workspaces/{workspaceId} {
+      // 인증된 사용자만 자신의 워크스페이스에 접근 가능
+      allow read, write: if request.auth != null 
+        && request.auth.uid == resource.data.user_id;
+      
+      // 새 워크스페이스 생성 허용
+      allow create: if request.auth != null 
+        && request.auth.uid == request.resource.data.user_id;
+    }
+    
+    // 시스템 데이터 (베타 카운터 등)
+    match /system/{document} {
+      // 모든 사용자가 읽기 가능 (베타 카운터 조회용)
+      allow read: if true;
+      
+      // 쓰기는 서버 사이드에서만 (백엔드 서비스 계정)
+      allow write: if false;
+    }
+    
+    // 개발/테스트용 임시 규칙 (운영에서는 제거)
+    match /temp/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

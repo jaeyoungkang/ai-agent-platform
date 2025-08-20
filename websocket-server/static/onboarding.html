@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>온보딩 - AI Agent Platform (Beta)</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'beta-primary': '#667eea',
+                        'beta-secondary': '#764ba2',
+                        'beta-accent': '#ff6b6b',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- 통합 스타일 및 공통 라이브러리 -->
+    <link rel="stylesheet" href="styles.css">
+    <script src="common.js"></script>
+</head>
+<body class="bg-gray-50 font-sans antialiased">
+    <div class="onboarding-container">
+        <!-- 진행률 표시 -->
+        <div class="flex justify-center items-center mb-8">
+            <div class="flex items-center space-x-4">
+                <div class="progress-step completed" data-step="1">
+                    <span class="text-sm">1. 계정 연결</span>
+                </div>
+                <div class="w-8 h-1 bg-blue-500 rounded-full"></div>
+                <div class="progress-step active" data-step="2">
+                    <span class="text-sm">2. 사용 목적</span>
+                </div>
+                <div class="w-8 h-1 bg-gray-300 rounded-full"></div>
+                <div class="progress-step pending" data-step="3">
+                    <span class="text-sm">3. 완료</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 사용 목적 설정 단계 -->
+        <div id="step-interests" class="bg-white rounded-lg shadow-lg p-8 max-w-4xl mx-auto">
+            <div class="text-center mb-8">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">🎯 어떤 자동화를 원하시나요?</h2>
+                <p class="text-gray-600">관심 있는 영역을 선택하시면 맞춤 추천을 제공합니다 (복수 선택 가능)</p>
+            </div>
+            
+            <div class="interest-grid">
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="investment" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            📈
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">투자/재정 관리</h3>
+                        <p class="text-sm text-gray-600">주식 분석, 포트폴리오 관리</p>
+                    </div>
+                </label>
+                
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="news" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            📰
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">뉴스/정보 수집</h3>
+                        <p class="text-sm text-gray-600">업계 동향, 트렌드 분석</p>
+                    </div>
+                </label>
+                
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="analytics" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            📊
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">데이터 분석/리포트</h3>
+                        <p class="text-sm text-gray-600">정기 보고서, 대시보드</p>
+                    </div>
+                </label>
+                
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="communication" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            📧
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">커뮤니케이션</h3>
+                        <p class="text-sm text-gray-600">이메일 관리, 스케줄 조정</p>
+                    </div>
+                </label>
+                
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="ecommerce" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            🛒
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">전자상거래</h3>
+                        <p class="text-sm text-gray-600">가격 모니터링, 재고 관리</p>
+                    </div>
+                </label>
+                
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="research" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            📚
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">학습/연구</h3>
+                        <p class="text-sm text-gray-600">논문 검색, 자료 정리</p>
+                    </div>
+                </label>
+                
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="business" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            💼
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">업무 자동화</h3>
+                        <p class="text-sm text-gray-600">워크플로우, 작업 관리</p>
+                    </div>
+                </label>
+                
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="personal" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            🏠
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">개인 생활</h3>
+                        <p class="text-sm text-gray-600">일정 관리, 취미 활동</p>
+                    </div>
+                </label>
+                
+                <label class="interest-card hover-lift cursor-pointer">
+                    <input type="checkbox" name="interests" value="marketing" class="sr-only">
+                    <div class="card-content text-center">
+                        <div class="interest-icon">
+                            🎯
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-gray-800">마케팅/영업</h3>
+                        <p class="text-sm text-gray-600">고객 관리, 캠페인 관리</p>
+                    </div>
+                </label>
+            </div>
+            
+            <div class="mt-8 max-w-md mx-auto">
+                <label for="nickname" class="block text-sm font-medium text-gray-700 mb-2">
+                    표시할 닉네임을 입력하세요:
+                </label>
+                <input 
+                    type="text" 
+                    id="nickname" 
+                    placeholder="예: 김투자" 
+                    maxlength="20"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus-ring text-lg"
+                >
+            </div>
+            
+            <div class="text-center mt-8">
+                <button 
+                    id="complete-interests" 
+                    class="btn btn-primary text-lg px-8 py-4 disabled:opacity-50 disabled:cursor-not-allowed" 
+                    disabled
+                >
+                    프로필 완성하기
+                </button>
+            </div>
+        </div>
+        
+        <!-- 온보딩 완료 단계 -->
+        <div id="step-complete" class="bg-white rounded-lg shadow-lg p-8 max-w-4xl mx-auto hidden">
+            <div class="text-center">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-4">
+                        🎉 환영합니다, <span id="user-nickname" class="text-blue-600">김투자</span>님!
+                    </h2>
+                    <p class="text-lg text-gray-600 mb-8">3단계로 첫 에이전트를 만들어보겠습니다:</p>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-100">
+                        <div class="text-4xl mb-4">1️⃣</div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2">에이전트가 할 일 정하기</h3>
+                        <p class="text-sm text-gray-600">어떤 작업을 자동화할지 결정</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-lg border border-green-100">
+                        <div class="text-4xl mb-4">2️⃣</div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2">실행 스케줄 설정하기</h3>
+                        <p class="text-sm text-gray-600">언제 어떻게 실행할지 설정</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-lg border border-purple-100">
+                        <div class="text-4xl mb-4">3️⃣</div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2">테스트 후 활성화하기</h3>
+                        <p class="text-sm text-gray-600">실제 작동 확인 후 운영 시작</p>
+                    </div>
+                </div>
+                
+                <div class="space-y-4 md:space-y-0 md:space-x-4 md:flex md:justify-center">
+                    <button id="start-tour" class="btn btn-primary text-lg px-8 py-4 w-full md:w-auto">
+                        투어 시작
+                    </button>
+                    <button id="create-direct" class="btn btn-secondary text-lg px-8 py-4 w-full md:w-auto">
+                        바로 만들기
+                    </button>
+                    <button id="skip-tour" class="btn btn-outline text-lg px-8 py-4 w-full md:w-auto border-2 border-gray-400 text-gray-700 hover:bg-gray-100">
+                        나중에
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 로딩 표시 -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl">
+            <div class="flex items-center space-x-3">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <span class="text-gray-700">처리 중...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript는 별도 파일로 -->
+    <script src="onboarding.js"></script>
+</body>
+</html>

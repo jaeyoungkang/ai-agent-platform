@@ -21,10 +21,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Requ
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 from typing import List, Optional
 import google.cloud.firestore as firestore
-from auth import auth_manager
+from auth import auth_manager, google_auth, beta_manager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -136,6 +137,28 @@ class ConnectionManager:
 # FastAPI 애플리케이션 초기화
 app = FastAPI(title="AI Agent Platform", version="1.0.0")
 
+# 요청 검증 오류 핸들러
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """요청 검증 오류 상세 처리"""
+    logger.error(f"Validation error for {request.url}: {exc.errors()}")
+    
+    # body를 안전하게 문자열로 변환
+    body_str = None
+    if hasattr(exc, 'body') and exc.body:
+        try:
+            if isinstance(exc.body, bytes):
+                body_str = exc.body.decode('utf-8')
+            else:
+                body_str = str(exc.body)
+        except:
+            body_str = "Unable to decode body"
+    
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": body_str}
+    )
+
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
@@ -211,6 +234,163 @@ async def validate_session(session_id: str):
         })
     else:
         return JSONResponse(content={"valid": False}, status_code=401)
+
+# 베타 사용자 관리 API
+@app.get("/api/beta/count")
+async def get_beta_count():
+    """베타 사용자 수 조회"""
+    try:
+        count = await beta_manager.get_beta_user_count()
+        return {"count": count, "max": 30, "remaining": 30 - count}
+    except Exception as e:
+        logger.error(f"Error getting beta count: {e}")
+        return {"count": 17, "max": 30, "remaining": 13}  # 기본값
+
+# Google OAuth 인증 모델
+class GoogleAuthRequest(BaseModel):
+    google_token: str
+    user_info: dict
+
+@app.post("/api/auth/google")
+async def google_auth(request: Request):
+    """Google OAuth 인증"""
+    try:
+        # 원시 요청 데이터 로깅
+        body = await request.body()
+        logger.info(f"Raw request body: {body.decode('utf-8') if body else 'Empty'}")
+        
+        # JSON 파싱 시도
+        try:
+            request_data = await request.json()
+            logger.info(f"Parsed JSON keys: {list(request_data.keys()) if isinstance(request_data, dict) else 'Not a dict'}")
+        except Exception as parse_error:
+            logger.error(f"JSON parsing error: {parse_error}")
+            raise HTTPException(status_code=400, detail="Invalid JSON format")
+        
+        # Pydantic 모델 검증
+        try:
+            auth_request = GoogleAuthRequest(**request_data)
+        except Exception as validation_error:
+            logger.error(f"Pydantic validation error: {validation_error}")
+            raise HTTPException(status_code=422, detail=str(validation_error))
+        
+        logger.info(f"Received Google auth request with token length: {len(auth_request.google_token) if auth_request.google_token else 0}")
+        logger.info(f"User info keys: {list(auth_request.user_info.keys()) if auth_request.user_info else 'None'}")
+        
+        # Google ID 토큰 검증
+        try:
+            # 실제 Google 토큰 검증은 여기서 수행해야 함
+            # 현재는 프론트엔드에서 받은 정보를 신뢰
+            user_info = {
+                'user_id': auth_request.user_info.get('id'),
+                'email': auth_request.user_info.get('email'),
+                'name': auth_request.user_info.get('name'),
+                'picture': auth_request.user_info.get('picture', '')
+            }
+            logger.info(f"Processed user info: {user_info}")
+        except Exception as token_error:
+            logger.error(f"Token verification error: {token_error}")
+            raise HTTPException(status_code=401, detail="Invalid Google token")
+        
+        if not user_info['user_id']:
+            raise HTTPException(status_code=401, detail="Invalid user info")
+        
+        # 베타 사용자 등록 가능 여부 확인
+        if not await beta_manager.can_register_beta_user():
+            # 기존 사용자인지 확인
+            existing_user = await beta_manager.get_user_by_google_id(user_info['user_id'])
+            if not existing_user:
+                raise HTTPException(status_code=403, detail="Beta slots are full")
+            user_data = existing_user
+        else:
+            # 새 베타 사용자 등록
+            user_data = await beta_manager.register_beta_user(user_info)
+        
+        return {
+            "success": True, 
+            "user_id": user_data['user_id'],
+            "user": {
+                "user_id": user_data['user_id'],
+                "email": user_data['email'],
+                "name": user_data['name'],
+                "picture": user_data.get('picture', ''),
+                "onboarding_completed": user_data.get('onboarding_completed', False)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Google auth error: {e}")
+        raise HTTPException(status_code=500, detail="Authentication failed")
+
+# 사용자 프로필 및 온보딩 API
+@app.get("/api/user/profile")
+async def get_user_profile(user_id: str = Header(alias="X-User-Id")):
+    """사용자 프로필 조회"""
+    try:
+        user_profile = await beta_manager.get_user_profile(user_id)
+        
+        if not user_profile:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return user_profile
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user profile: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user profile")
+
+# 온보딩 데이터 모델
+class OnboardingRequest(BaseModel):
+    interests: List[str]
+    nickname: str
+
+@app.post("/api/user/onboarding")
+async def complete_onboarding(
+    request: Request,
+    user_id: str = Header(alias="X-User-Id")
+):
+    """온보딩 완료"""
+    try:
+        # 원시 요청 데이터 로깅
+        body = await request.body()
+        logger.info(f"Onboarding raw body: {body.decode('utf-8') if body else 'Empty'}")
+        
+        # JSON 파싱
+        try:
+            request_data = await request.json()
+            logger.info(f"Onboarding parsed data: {request_data}")
+        except Exception as parse_error:
+            logger.error(f"Onboarding JSON parsing error: {parse_error}")
+            raise HTTPException(status_code=400, detail="Invalid JSON format")
+        
+        # Pydantic 모델 검증
+        try:
+            onboarding_data = OnboardingRequest(**request_data)
+        except Exception as validation_error:
+            logger.error(f"Onboarding validation error: {validation_error}")
+            raise HTTPException(status_code=422, detail=str(validation_error))
+        
+        success = await beta_manager.complete_onboarding(
+            user_id,
+            {
+                "interests": onboarding_data.interests,
+                "nickname": onboarding_data.nickname
+            }
+        )
+        
+        if success:
+            return {"success": True, "message": "Onboarding completed successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to complete onboarding")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing onboarding: {e}")
+        raise HTTPException(status_code=500, detail="Failed to complete onboarding")
 
 # 에이전트 관리 데이터 모델
 class AgentCreateRequest(BaseModel):

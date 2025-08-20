@@ -5,14 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 에이전트 플랫폼</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles.css">
+    <script src="common.js"></script>
     <style>
-        /* 전문적인 사무 스타일 */
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-            background-color: #f8f9fa;
+        /* 워크스페이스 특화 스타일 */
+        .chat-container {
+            scrollbar-width: thin;
+            scrollbar-color: #c1c5c9 #f1f3f4;
         }
         
-        /* 스크롤바 스타일 */
         .chat-container::-webkit-scrollbar {
             width: 6px;
         }
@@ -27,46 +28,20 @@
             background: #a8acb1;
         }
         
-        /* 상태 표시 */
-        .status-pulse {
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-        
-        /* 메시지 스타일 - 사무적 */
+        /* 메시지 스타일 */
         .message-user {
-            background: #495057;
+            background: #4b5563;
             color: white;
         }
         
         .message-claude {
-            background: #007bff;
+            background: #2563eb;
             color: white;
         }
         
         .message-system {
-            background: #6c757d;
+            background: #6b7280;
             color: white;
-        }
-        
-        /* 헤더 스타일 */
-        .header-gradient {
-            background: linear-gradient(90deg, #495057 0%, #343a40 100%);
-        }
-        
-        /* 버튼 스타일 */
-        .btn-primary {
-            background: #007bff;
-            border: 1px solid #007bff;
-        }
-        
-        .btn-primary:hover {
-            background: #0056b3;
-            border-color: #0056b3;
         }
     </style>
 </head>
@@ -76,7 +51,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center py-4">
                 <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 bg-white rounded flex items-center justify-center">
+                    <div class="header-logo">
                         <span class="text-gray-700 font-semibold text-sm">AI</span>
                     </div>
                     <h1 class="text-lg font-medium text-white">워크스페이스</h1>
@@ -128,13 +103,13 @@
                                 type="text" 
                                 id="message-input" 
                                 placeholder="Claude에게 메시지를 입력하세요..."
-                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                class="form-input"
                                 autocomplete="off"
                             >
                         </div>
                         <button 
                             id="send-button"
-                            class="btn-primary px-6 py-3 text-white rounded hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="btn btn-primary"
                         >
                             전송
                         </button>
@@ -172,7 +147,7 @@
                 this.sessionId = urlParams.get('session');
                 
                 if (!this.sessionId) {
-                    alert('세션 ID가 필요합니다. 대시보드에서 접근해주세요.');
+                    Notification.error('세션 ID가 필요합니다. 대시보드에서 접근해주세요.');
                     window.location.href = '/static/dashboard.html';
                     return;
                 }
@@ -181,10 +156,9 @@
             async initializeWorkspace() {
                 try {
                     // 워크스페이스 상태 복원
-                    const response = await fetch(`/api/workspace/${this.sessionId}/restore`);
+                    const workspace = await API.get(`/api/workspace/${this.sessionId}/restore`);
                     
-                    if (response.ok) {
-                        const workspace = await response.json();
+                    if (workspace) {
                         this.userId = workspace.userId;
                         this.agentId = workspace.agentId;
                         
@@ -207,13 +181,9 @@
             
             async fallbackAuth() {
                 try {
-                    const response = await fetch('/api/auth/guest', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
+                    const authData = await API.post('/api/auth/guest', {});
                     
-                    if (response.ok) {
-                        const authData = await response.json();
+                    if (authData) {
                         this.userId = authData.user_id;
                         document.getElementById('user-id').textContent = this.userId;
                         this.connectWebSocket();
@@ -227,12 +197,11 @@
                 if (!this.agentId) return;
                 
                 try {
-                    const response = await fetch(`/api/agents/${this.agentId}`, {
-                        headers: { 'X-User-Id': this.userId }
+                    const agent = await API.get(`/api/agents/${this.agentId}`, {
+                        'X-User-Id': this.userId
                     });
                     
-                    if (response.ok) {
-                        const agent = await response.json();
+                    if (agent) {
                         document.getElementById('agent-name').textContent = agent.name;
                         document.getElementById('user-id').textContent = this.userId;
                     }
@@ -394,16 +363,11 @@
             }
             
             escapeHtml(text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
+                return Utils.escapeHtml(text);
             }
             
             formatTime(date) {
-                return date.toLocaleTimeString('ko-KR', { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
-                });
+                return Utils.formatTime(date);
             }
             
             showStatus(message) {

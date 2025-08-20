@@ -3,17 +3,423 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 에이전트 플랫폼 - 로딩중...</title>
+    <title>AI Agent Platform (Beta) - 나만의 AI 에이전트를 만들어보세요</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // 즉시 대시보드로 리다이렉트
-        window.location.href = '/static/dashboard.html';
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'beta-primary': '#667eea',
+                        'beta-secondary': '#764ba2',
+                        'beta-accent': '#ff6b6b',
+                    }
+                }
+            }
+        }
     </script>
+    
+    <!-- 통합 스타일 및 공통 라이브러리 -->
+    <link rel="stylesheet" href="styles.css">
+    <script src="common.js"></script>
+    
+    <!-- Google Identity Services API -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
-<body>
-    <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-        <h2>AI 에이전트 플랫폼</h2>
-        <p>대시보드로 이동 중...</p>
-        <p><a href="/static/dashboard.html">자동으로 이동되지 않으면 여기를 클릭하세요</a></p>
+<body class="font-sans antialiased">
+    <!-- 베타 서비스 히어로 섹션 -->
+    <div class="landing-hero">
+        <div class="container-responsive text-center">
+            <!-- 메인 타이틀 -->
+            <div class="fade-in-up">
+                <h1 class="text-5xl md:text-7xl font-bold mb-4">
+                    AI Agent Platform 
+                    <span class="beta-badge inline-block text-3xl md:text-4xl bg-yellow-400 text-gray-800 px-4 py-2 rounded-full">Beta</span>
+                </h1>
+                <p class="text-2xl md:text-3xl font-semibold mb-8 bounce-gentle">🚀 베타 서비스 런칭!</p>
+            </div>
+            
+            <!-- 베타 상태 카드 -->
+            <div class="landing-card max-w-2xl mx-auto mb-8 fade-in-up" style="animation-delay: 0.2s">
+                <div class="mb-6">
+                    <h3 class="text-2xl font-bold mb-4">🤖 나만의 AI 에이전트를 만들어보세요</h3>
+                    <p class="text-lg mb-4">📋 현재 베타 테스터 모집 중 (30명 한정)</p>
+                </div>
+                
+                <div class="bg-beta-glass p-6 rounded-lg mb-6">
+                    <h4 class="text-xl font-semibold mb-4">⚠️ 베타 서비스 안내</h4>
+                    <ul class="text-left space-y-2">
+                        <li>• 현재 베타 테스터만 이용 가능</li>
+                        <li>• 선착순 30명까지만 가입 가능</li>
+                        <li>• 무료로 모든 기능 체험 가능</li>
+                    </ul>
+                </div>
+                
+                <div class="beta-counter">
+                    💡 현재 <span id="current-users" class="text-yellow-300">17</span>/30명 참여 중 
+                    (<span id="remaining-slots" class="text-green-300">13</span>자리 남음)
+                </div>
+            </div>
+            
+            <!-- CTA 버튼들 -->
+            <div class="flex flex-col md:flex-row gap-4 justify-center items-center fade-in-up" style="animation-delay: 0.4s">
+                <button id="beta-signup-btn" class="btn btn-primary text-xl px-8 py-4 rounded-lg shadow-lg">
+                    베타 참여 신청
+                </button>
+                <button id="demo-btn" class="btn btn-secondary text-xl px-8 py-4 rounded-lg shadow-lg">
+                    데모 보기
+                </button>
+                <button id="docs-btn" class="btn btn-outline text-xl px-8 py-4 rounded-lg">
+                    문서 보기
+                </button>
+            </div>
+        </div>
     </div>
+
+    <!-- 데모 섹션 (UX.md 시나리오 기반) -->
+    <div id="demo-section" class="bg-gray-50 py-16 px-4 hidden">
+        <div class="demo-section bg-white rounded-lg shadow-xl p-8 mt-12 max-w-4xl mx-auto">
+            <h2 class="text-3xl font-bold text-center mb-8 text-gray-800">
+                🎬 실제 에이전트 생성 과정 체험
+            </h2>
+            
+            <div class="demo-conversation space-y-6">
+                <!-- 시나리오 헤더 -->
+                <div class="scenario-header">
+                    <h3 class="text-xl font-semibold mb-2">📈 주간 주식 뉴스 분석 에이전트 생성 과정</h3>
+                    <p class="text-gray-600">실제 사용자와 AI의 대화를 통한 에이전트 생성 시연</p>
+                </div>
+                
+                <!-- 대화 시나리오 -->
+                <div class="conversation-flow">
+                    <div class="message user-message">
+                        <div class="message-avatar bg-blue-500 text-white">👤</div>
+                        <div class="message-content bg-blue-50 border-l-4 border-blue-500">
+                            <p>"매주 특정 주식에 대한 최신 정보를 수집하고 분석하는 에이전트를 만들고 싶어요."</p>
+                        </div>
+                    </div>
+                    
+                    <div class="message ai-message">
+                        <div class="message-avatar bg-green-500 text-white">🤖</div>
+                        <div class="message-content bg-green-50 border-l-4 border-green-500">
+                            <p>"네, 좋습니다! '주간 주식 분석 에이전트' 생성을 시작하겠습니다. 먼저, 이 에이전트가 언제 실행되기를 원하시나요? 스케줄을 설정해주세요."</p>
+                        </div>
+                    </div>
+                    
+                    <div class="message user-message">
+                        <div class="message-avatar bg-blue-500 text-white">👤</div>
+                        <div class="message-content bg-blue-50 border-l-4 border-blue-500">
+                            <p>"매주 월요일 오전 8시에 자동으로 실행되었으면 합니다."</p>
+                        </div>
+                    </div>
+                    
+                    <div class="message ai-message">
+                        <div class="message-avatar bg-green-500 text-white">🤖</div>
+                        <div class="message-content bg-green-50 border-l-4 border-green-500">
+                            <div class="status-indicator mb-2 text-sm text-gray-500">
+                                [상태 표시: 스케줄 설정 중...]
+                            </div>
+                            <p class="mb-3">"알겠습니다. 스케줄이 다음과 같이 설정되었습니다."</p>
+                            
+                            <div class="bg-white p-4 rounded-lg border border-gray-200">
+                                <h4 class="font-semibold text-gray-800 mb-2">📅 스케줄 정보</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                                    <div><strong>실행 주기:</strong> 매주</div>
+                                    <div><strong>실행 요일:</strong> 월요일</div>
+                                    <div><strong>실행 시간:</strong> 오전 8:00</div>
+                                </div>
+                            </div>
+                            
+                            <p class="mt-3">"이제 에이전트가 수행할 첫 번째 작업을 알려주세요."</p>
+                        </div>
+                    </div>
+                    
+                    <div class="message user-message">
+                        <div class="message-avatar bg-blue-500 text-white">👤</div>
+                        <div class="message-content bg-blue-50 border-l-4 border-blue-500">
+                            <p>"첫 번째 작업은, 지난 1주일 동안 '알파벳(Alphabet)' 사와 관련된 주요 뉴스들을 중복 없이, 관련도 순으로 수집하는 것입니다."</p>
+                        </div>
+                    </div>
+                    
+                    <div class="message ai-message">
+                        <div class="message-avatar bg-green-500 text-white">🤖</div>
+                        <div class="message-content bg-green-50 border-l-4 border-green-500">
+                            <div class="status-indicator mb-2 text-sm text-gray-500">
+                                [상태 표시: 작업 분석 중...]
+                            </div>
+                            
+                            <p class="mb-3">"네, 첫 번째 작업으로 '알파벳(Alphabet) 주간 뉴스 수집'을 설정하겠습니다. 이 작업을 위해 Google News API를 사용하는 것이 가장 효율적일 것 같습니다."</p>
+                            
+                            <div class="status-indicator my-2 text-sm text-gray-500">
+                                [상태 표시: 테스트 실행 중...]
+                            </div>
+                            
+                            <div class="test-result-card">
+                                <h4 class="font-semibold text-gray-800 mb-2">📊 테스트 결과 요약</h4>
+                                <div class="grid grid-cols-2 gap-4 text-sm mb-3">
+                                    <div>
+                                        <p><strong>발견된 뉴스:</strong> 152개</p>
+                                        <p><strong>유효한 뉴스:</strong> 118개</p>
+                                    </div>
+                                    <div>
+                                        <p><strong>처리 시간:</strong> 2분 30초</p>
+                                        <p><strong>중복 제거율:</strong> 22%</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <p class="font-medium text-gray-700 mb-2">샘플 데이터:</p>
+                                    <ul class="text-xs space-y-1 text-gray-600">
+                                        <li>1. "Alphabet, AI 신규 모델 발표로 주가 상승" (Reuters)</li>
+                                        <li>2. "Waymo, 자율주행 서비스 지역 확대" (TechCrunch)</li>
+                                        <li>3. ...</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="token-usage">
+                                    <strong>토큰 사용량:</strong> 입력 1,234 토큰, 출력 2,567 토큰
+                                </div>
+                            </div>
+                            
+                            <p class="mt-3">"이 결과가 만족스러우신가요? 다음 단계를 진행할까요?"</p>
+                        </div>
+                    </div>
+                    
+                    <div class="final-result">
+                        <h4 class="text-lg font-semibold mb-3 text-gray-800">🎉 에이전트 생성 완료</h4>
+                        <div class="agent-summary">
+                            <h5 class="font-semibold text-gray-800 mb-2">📋 주간 주식 분석 에이전트</h5>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-4">
+                                <div>
+                                    <p><strong>실행 스케줄:</strong> 매주 월요일 오전 8:00</p>
+                                    <p><strong>분석 대상:</strong> 알파벳(Alphabet)</p>
+                                </div>
+                                <div>
+                                    <p><strong>작업 흐름:</strong> 뉴스 수집 → 분석 → 요약</p>
+                                    <p><strong>예상 월간 사용량:</strong> ~40,000 토큰</p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center space-x-4">
+                                <span class="badge badge-success">✅ 활성화됨</span>
+                                <span class="text-xs text-gray-500">
+                                    다음 실행 예정: 2024년 1월 8일 월요일 오전 8:00
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center mt-8">
+                    <p class="text-gray-600 mb-4">실제로도 이렇게 쉽고 빠르게 에이전트를 만들 수 있습니다!</p>
+                    <button id="start-now-btn" class="btn btn-primary text-lg px-6 py-3">지금 시작하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 베타 신청 모달 -->
+    <div id="beta-signup-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-lg max-w-md w-full p-6">
+            <h2 class="text-2xl font-bold mb-4">🚀 AI Agent Platform 베타 테스터 신청</h2>
+            
+            <div class="mb-6">
+                <div class="mb-4">
+                    <h3 class="font-semibold mb-2">🔐 구글 계정으로 간편 가입</h3>
+                </div>
+                
+                <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4">
+                    <h4 class="font-semibold mb-2">⚠️ 베타 테스터 선정 기준</h4>
+                    <ul class="text-sm space-y-1">
+                        <li>• 선착순 30명 한정</li>
+                        <li>• 활발한 피드백 제공 가능한 분</li>
+                        <li>• 최소 4주간 서비스 사용 약속</li>
+                    </ul>
+                </div>
+                
+                <button id="google-signin-btn" class="w-full btn btn-primary py-3">
+                    구글로 계속하기
+                </button>
+            </div>
+            
+            <div class="flex justify-end space-x-2">
+                <button id="modal-close-btn" class="btn btn-outline">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 베타 사용자 수 관리
+        class BetaCounter {
+            constructor() {
+                this.maxUsers = 30;
+                this.currentUsers = 17; // 기본값
+                this.init();
+            }
+            
+            async init() {
+                await this.getCurrentUserCount();
+                this.updateDisplay();
+            }
+            
+            async getCurrentUserCount() {
+                try {
+                    const data = await API.get('/api/beta/count');
+                    this.currentUsers = data.count || 17;
+                } catch (error) {
+                    console.log('Using default beta count');
+                }
+            }
+            
+            updateDisplay() {
+                document.getElementById('current-users').textContent = this.currentUsers;
+                document.getElementById('remaining-slots').textContent = 
+                    this.maxUsers - this.currentUsers;
+            }
+            
+            checkAvailability() {
+                return this.currentUsers < this.maxUsers;
+            }
+        }
+
+        // 베타 신청 시스템
+        class BetaSignup {
+            constructor() {
+                this.setupEventListeners();
+            }
+            
+            setupEventListeners() {
+                // 베타 신청 버튼
+                document.getElementById('beta-signup-btn').addEventListener('click', 
+                    this.showSignupModal.bind(this));
+                    
+                // 지금 시작하기 버튼 (데모에서)
+                document.getElementById('start-now-btn').addEventListener('click', 
+                    this.showSignupModal.bind(this));
+                    
+                // 데모 보기 버튼
+                document.getElementById('demo-btn').addEventListener('click', 
+                    this.showDemo.bind(this));
+                    
+                // 문서 보기 버튼
+                document.getElementById('docs-btn').addEventListener('click', 
+                    this.showDocs.bind(this));
+                    
+                // 모달 닫기
+                document.getElementById('modal-close-btn').addEventListener('click', 
+                    this.hideSignupModal.bind(this));
+                    
+                // 구글 로그인
+                document.getElementById('google-signin-btn').addEventListener('click', 
+                    this.handleGoogleSignin.bind(this));
+                
+                // 모달 배경 클릭으로 닫기
+                document.getElementById('beta-signup-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'beta-signup-modal') {
+                        this.hideSignupModal();
+                    }
+                });
+            }
+            
+            showSignupModal() {
+                document.getElementById('beta-signup-modal').classList.remove('hidden');
+            }
+            
+            hideSignupModal() {
+                document.getElementById('beta-signup-modal').classList.add('hidden');
+            }
+            
+            showDemo() {
+                const demoSection = document.getElementById('demo-section');
+                demoSection.classList.remove('hidden');
+                demoSection.scrollIntoView({ behavior: 'smooth' });
+            }
+            
+            showDocs() {
+                // 현재는 대시보드로 이동 (향후 문서 페이지 구현)
+                window.location.href = '/static/dashboard.html';
+            }
+            
+            async handleGoogleSignin() {
+                try {
+                    LoadingManager.show('Google 로그인 중...');
+                    
+                    // Google API가 로드되었는지 확인
+                    if (typeof google === 'undefined') {
+                        throw new Error('Google API가 로드되지 않았습니다. 페이지를 새로고침해주세요.');
+                    }
+                    
+                    // OAuth2 팝업 방식으로 로그인
+                    const tokenClient = google.accounts.oauth2.initTokenClient({
+                        client_id: '759247706259-mrbloqj41f89obbqo1mnrg4r0l4fpbe3.apps.googleusercontent.com',
+                        scope: 'openid email profile',
+                        callback: async (tokenResponse) => {
+                            try {
+                                console.log('Token response:', tokenResponse);
+                                
+                                // 사용자 정보 가져오기
+                                const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                                    headers: {
+                                        'Authorization': `Bearer ${tokenResponse.access_token}`
+                                    }
+                                });
+                                
+                                if (!userInfoResponse.ok) {
+                                    throw new Error('사용자 정보를 가져올 수 없습니다.');
+                                }
+                                
+                                const userInfo = await userInfoResponse.json();
+                                console.log('User info:', userInfo);
+                                
+                                // 백엔드에 인증 정보 전송
+                                const authResult = await API.post('/api/auth/google', {
+                                    google_token: tokenResponse.access_token,
+                                    user_info: {
+                                        id: userInfo.id,
+                                        email: userInfo.email,
+                                        name: userInfo.name,
+                                        picture: userInfo.picture
+                                    }
+                                });
+                                
+                                LoadingManager.hide();
+                                
+                                if (authResult && authResult.success) {
+                                    Notification.success('Google 로그인이 성공했습니다!');
+                                    
+                                    setTimeout(() => {
+                                        window.location.href = `/static/onboarding.html?user_id=${authResult.user_id}`;
+                                    }, 1000);
+                                } else {
+                                    throw new Error('서버 인증에 실패했습니다.');
+                                }
+                                
+                            } catch (error) {
+                                LoadingManager.hide();
+                                console.error('Authentication error:', error);
+                                Notification.error('Google 로그인에 실패했습니다: ' + (error.message || 'Unknown error'));
+                            }
+                        }
+                    });
+                    
+                    // 토큰 요청 시작
+                    tokenClient.requestAccessToken();
+                    
+                } catch (error) {
+                    LoadingManager.hide();
+                    console.error('Google signin error:', error);
+                    Notification.error('Google 로그인에 실패했습니다: ' + (error.message || 'Unknown error'));
+                }
+            }
+        }
+
+        // 페이지 로드시 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            new BetaCounter();
+            new BetaSignup();
+        });
+    </script>
 </body>
 </html>

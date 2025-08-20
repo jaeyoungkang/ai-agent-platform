@@ -5,92 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 에이전트 대시보드</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles.css">
+    <script src="common.js"></script>
     <style>
-        /* 전문적인 사무 스타일 */
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-            background-color: #f8f9fa;
-            color: #343a40;
-        }
-        
-        /* 에이전트 카드 - 사무적 스타일 */
+        /* 대시보드 특화 스타일 */
         .agent-card {
             background: white;
-            border: 1px solid #e9ecef;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            border: 1px solid #e5e7eb;
+            transition: all 0.2s ease;
         }
         
         .agent-card:hover {
-            border-color: #6c757d;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-color: #6b7280;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
         }
         
-        /* 새 에이전트 생성 카드 - 전문적 스타일 */
         .create-agent-card {
-            background: #495057;
+            background: #4b5563;
             color: white;
             cursor: pointer;
-            border: 2px dashed #6c757d;
+            border: 2px dashed #6b7280;
             transition: all 0.2s ease;
         }
         
         .create-agent-card:hover {
-            background: #343a40;
-            border-color: #495057;
+            background: #374151;
+            border-color: #4b5563;
         }
         
         .create-icon {
             font-size: 2.5rem;
             margin-bottom: 1rem;
             font-weight: 300;
-        }
-        
-        /* 상태 표시 - 전문적 색상 */
-        .status-draft { background: #6c757d; }
-        .status-active { background: #28a745; }
-        .status-running { background: #007bff; animation: pulse 2s infinite; }
-        .status-paused { background: #ffc107; }
-        .status-error { background: #dc3545; }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        
-        /* 통계 카드 - 사무적 스타일 */
-        .stat-card {
-            background: white;
-            border: 1px solid #dee2e6;
-            color: #495057;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            text-align: center;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-        }
-        
-        .stat-number {
-            font-size: 2rem;
-            font-weight: 600;
-            display: block;
-            margin-top: 0.5rem;
-            color: #007bff;
-        }
-        
-        /* 헤더 스타일 */
-        .header-gradient {
-            background: linear-gradient(90deg, #495057 0%, #343a40 100%);
-        }
-        
-        /* 버튼 스타일 */
-        .btn-primary {
-            background: #007bff;
-            border-color: #007bff;
-            font-weight: 500;
-        }
-        
-        .btn-primary:hover {
-            background: #0056b3;
-            border-color: #0056b3;
         }
     </style>
 </head>
@@ -100,7 +47,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center py-4">
                 <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 bg-white rounded flex items-center justify-center">
+                    <div class="header-logo">
                         <span class="text-gray-700 font-semibold text-sm">AI</span>
                     </div>
                     <h1 class="text-xl font-semibold text-white">에이전트 관리 시스템</h1>
@@ -239,22 +186,13 @@
             
             async loadAgents() {
                 try {
-                    const response = await fetch('/api/agents', {
-                        headers: { 'X-User-Id': this.userId }
+                    this.agents = await API.get('/api/agents', {
+                        'X-User-Id': this.userId
                     });
                     
-                    if (response.ok) {
-                        this.agents = await response.json();
-                        this.filteredAgents = [...this.agents];
-                        this.renderAgents();
-                        this.updateStats();
-                    } else {
-                        // 에이전트가 없는 경우 빈 배열로 처리
-                        this.agents = [];
-                        this.filteredAgents = [];
-                        this.renderAgents();
-                        this.updateStats();
-                    }
+                    this.filteredAgents = [...this.agents];
+                    this.renderAgents();
+                    this.updateStats();
                 } catch (error) {
                     console.error('Failed to load agents:', error);
                     this.agents = [];
@@ -422,8 +360,7 @@
             }
             
             showError(message) {
-                // 간단한 오류 표시
-                alert(message);
+                Notification.error(message);
             }
         }
         
@@ -450,41 +387,36 @@
         
         window.runAgent = async (agentId) => {
             try {
-                const response = await fetch(`/api/agents/${agentId}/execute`, {
-                    method: 'POST',
-                    headers: { 'X-User-Id': window.dashboard.userId }
+                await API.post(`/api/agents/${agentId}/execute`, {}, {
+                    'X-User-Id': window.dashboard.userId
                 });
                 
-                if (response.ok) {
-                    alert('에이전트가 실행되었습니다.');
-                    window.dashboard.loadAgents(); // 목록 새로고침
-                } else {
-                    throw new Error('Failed to run agent');
-                }
+                Notification.success('에이전트가 실행되었습니다.');
+                window.dashboard.loadAgents(); // 목록 새로고침
             } catch (error) {
                 console.error('Failed to run agent:', error);
-                alert('에이전트 실행에 실패했습니다.');
+                Notification.error('에이전트 실행에 실패했습니다.');
             }
         };
         
         window.deleteAgent = async (agentId) => {
-            if (!confirm('정말로 이 에이전트를 삭제하시겠습니까?')) return;
-            
-            try {
-                const response = await fetch(`/api/agents/${agentId}`, {
-                    method: 'DELETE',
-                    headers: { 'X-User-Id': window.dashboard.userId }
-                });
-                
-                if (response.ok) {
-                    window.dashboard.loadAgents(); // 목록 새로고침
-                } else {
-                    throw new Error('Failed to delete agent');
+            Modal.confirm(
+                '에이전트 삭제',
+                '정말로 이 에이전트를 삭제하시겠습니까?',
+                async () => {
+                    try {
+                        await API.delete(`/api/agents/${agentId}`, {
+                            'X-User-Id': window.dashboard.userId
+                        });
+                        
+                        Notification.success('에이전트가 삭제되었습니다.');
+                        window.dashboard.loadAgents(); // 목록 새로고침
+                    } catch (error) {
+                        console.error('Failed to delete agent:', error);
+                        Notification.error('에이전트 삭제에 실패했습니다.');
+                    }
                 }
-            } catch (error) {
-                console.error('Failed to delete agent:', error);
-                alert('에이전트 삭제에 실패했습니다.');
-            }
+            );
         };
         
         // 애플리케이션 초기화
