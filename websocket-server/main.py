@@ -213,7 +213,7 @@ async def user_workspace(websocket: WebSocket, user_id: str):
 @app.get("/health")
 async def health_check():
     """헬스체크 엔드포인트"""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat(), "version": "1.0.1"}
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat(), "version": "1.0.2", "registry": "artifact-registry"}
 
 @app.post("/api/auth/guest")
 async def create_guest_session(request: Request):

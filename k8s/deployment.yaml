@@ -16,7 +16,7 @@ spec:
       serviceAccountName: ai-agent-ksa
       containers:
       - name: api-server
-        image: gcr.io/ai-agent-platform-469401/api-server:v2.0-clean
+        image: asia-northeast3-docker.pkg.dev/ai-agent-platform-469401/ai-agent-repo/api-server:latest
         ports:
         - containerPort: 8000
         env:
