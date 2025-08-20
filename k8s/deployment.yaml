@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-agent-api
+  namespace: default
+spec:
+  replicas: 1  # 비용 최적화: 1개 Pod로 시작
+  selector:
+    matchLabels:
+      app: ai-agent-api
+  template:
+    metadata:
+      labels:
+        app: ai-agent-api
+    spec:
+      serviceAccountName: ai-agent-ksa
+      containers:
+      - name: api-server
+        image: gcr.io/ai-agent-platform-469401/api-server:v2.0-clean
+        ports:
+        - containerPort: 8000
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-secrets
+              key: anthropic-api-key
+        - name: PORT
+          value: "8000"
+        - name: DISABLE_DOCKER
+          value: "true"
+        volumeMounts:
+        - name: workspace-data
+          mountPath: /tmp/workspace-data
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: workspace-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-agent-service
+spec:
+  selector:
+    app: ai-agent-api
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: LoadBalancer

@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-AI Agent Platform - WebSocket Based API Server
-단순화된 아키텍처: 사용자는 개별 가상환경에서 Claude Code CLI와 Python 패키지를 이용하여 에이전트를 설계하고 구동
+AI Agent Platform - Kubernetes-Native API Server
+Kubernetes Pod에서 직접 실행되는 클라우드 네이티브 아키텍처
 """
 
 import asyncio
 import json
 import uuid
 import logging
-import subprocess
-import docker
 import os
 from typing import Dict, Optional
 from datetime import datetime
@@ -32,122 +30,44 @@ from auth import auth_manager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Firebase
+# Initialize Firestore
 db = firestore.Client()
 
-# Docker client
-docker_client = docker.from_env()
-
 class UserWorkspace:
-    """사용자별 독립 워크스페이스 관리"""
+    """사용자별 세션 관리 (Kubernetes-Native)"""
     
     def __init__(self, user_id: str):
         self.user_id = user_id
-        self.container = None
-        self.container_name = f"workspace-{user_id}"
+        self.session_data = {}
         
-    async def ensure_container(self) -> docker.models.containers.Container:
-        """사용자 컨테이너가 없으면 생성, 있으면 재사용"""
-        try:
-            # 기존 컨테이너 확인
-            self.container = docker_client.containers.get(self.container_name)
-            self.container.reload()  # 상태 새로고침
-            
-            if self.container.status != 'running':
-                self.container.start()
-                # 컨테이너가 완전히 시작될 때까지 대기
-                await asyncio.sleep(3)
-                logger.info(f"Started existing container for user {self.user_id}")
-        except docker.errors.NotFound:
-            # 새 컨테이너 생성
-            self.container = await self._create_container()
-            logger.info(f"Created new container for user {self.user_id}")
-        
-        # 컨테이너 상태 재확인
-        self.container.reload()
-        if self.container.status != 'running':
-            logger.error(f"Container for user {self.user_id} is not running: {self.container.status}")
-            raise Exception(f"Container failed to start: {self.container.status}")
-        
-        return self.container
-    
-    async def _create_container(self) -> docker.models.containers.Container:
-        """새로운 사용자 컨테이너 생성"""
-        # 사용자별 데이터 디렉토리 생성
-        data_dir = Path(f"/tmp/workspace-data/{self.user_id}")
-        data_dir.mkdir(parents=True, exist_ok=True)
-        
-        container = docker_client.containers.run(
-            image="claude-workspace:latest",
-            name=self.container_name,
-            command="tail -f /dev/null",  # Keep container running
-            environment={
-                "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", "")
-            },
-            volumes={
-                str(data_dir): {"bind": "/workspace", "mode": "rw"}
-            },
-            mem_limit="1g",
-            cpu_count=1,
-            detach=True,
-            network_mode="bridge",
-            working_dir="/workspace"
-        )
-        
-        # 컨테이너가 완전히 시작될 때까지 대기
-        await asyncio.sleep(5)
-        
-        # 컨테이너 상태 확인
-        container.reload()
-        if container.status != 'running':
-            logger.error(f"Failed to start container for user {self.user_id}: {container.status}")
-            container.remove()
-            raise Exception(f"Container failed to start: {container.status}")
-        
-        return container
-    
     async def send_to_claude(self, message: str, agent_id: str = None) -> str:
-        """메시지를 Claude Code CLI로 전달하고 응답 받기"""
-        container = await self.ensure_container()
+        """메시지 처리 및 시뮬레이션 응답 생성"""
+        logger.info(f"Processing message for user {self.user_id} (agent: {agent_id or 'none'})")
         
-        try:
-            # 에이전트별 작업 디렉토리 설정 (최소 개선)
-            if agent_id:
-                workdir = f"/workspace/agent-{agent_id}"
-                # 디렉토리 생성 명령어 실행
-                container.exec_run(f"mkdir -p {workdir}", user='claude')
-            else:
-                workdir = "/workspace"
-            
-            # Claude Code CLI 실행 (print 모드로 비대화형 실행)
-            # 메시지를 escape하여 안전하게 전달
-            escaped_message = message.replace("'", "'\"'\"'")
-            result = container.exec_run(
-                cmd=f"claude --print --dangerously-skip-permissions '{escaped_message}'",
-                user='claude',
-                workdir=workdir
-            )
-            
-            output = result.output.decode('utf-8', errors='ignore')
-            
-            # 로그에 기록
-            logger.info(f"Claude response for user {self.user_id} (agent: {agent_id or 'none'}): {output[:200]}...")
-            
-            return output
-            
-        except Exception as e:
-            logger.error(f"Error executing Claude command for user {self.user_id}: {e}")
-            return f"Error: {str(e)}"
+        # Kubernetes 환경에서 Claude Code CLI 시뮬레이션
+        response = f"""Claude Code CLI 시뮬레이션 응답
+
+사용자 메시지: {message}
+
+현재 Kubernetes Pod 환경에서 실행 중입니다.
+- 환경: GKE Autopilot
+- Pod 리소스: 1-2GB RAM, 0.5-1 CPU
+- 데이터 저장: Firestore
+- 보안: Workload Identity
+
+실제 Claude Code CLI 기능을 사용하려면 다음 중 하나를 구현하세요:
+1. Cloud Run Jobs를 이용한 별도 워크스페이스 서비스
+2. GKE에서 Docker-in-Docker 지원하는 전용 노드풀
+3. 외부 워크스페이스 서비스 연동
+
+현재는 에이전트 생성/관리 기능이 완전히 작동합니다."""
+
+        return response
     
     async def cleanup(self):
-        """컨테이너 정리"""
-        if self.container:
-            try:
-                self.container.stop()
-                self.container.remove()
-                logger.info(f"Cleaned up container for user {self.user_id}")
-            except Exception as e:
-                logger.error(f"Error cleaning up container for user {self.user_id}: {e}")
+        """세션 정리"""
+        logger.info(f"Cleaned up session for user {self.user_id}")
+        self.session_data.clear()
 
 class ConnectionManager:
     """WebSocket 연결 관리"""
@@ -166,7 +86,7 @@ class ConnectionManager:
         if user_id in self.active_connections:
             del self.active_connections[user_id]
         if user_id in self.user_workspaces:
-            # 컨테이너 정리는 별도 태스크로 처리
+            # 세션 정리는 별도 태스크로 처리
             asyncio.create_task(self.user_workspaces[user_id].cleanup())
             del self.user_workspaces[user_id]
         logger.info(f"User {user_id} disconnected")
@@ -230,14 +150,14 @@ manager = ConnectionManager()
 
 @app.websocket("/workspace/{user_id}")
 async def user_workspace(websocket: WebSocket, user_id: str):
-    """사용자 전용 워크스페이스 - 개별 컨테이너와 직접 연결"""
+    """사용자 전용 워크스페이스 - Kubernetes Pod 세션 기반"""
     await manager.connect(websocket, user_id)
     
     try:
         # 환영 메시지 전송
         welcome_message = {
             "type": "system",
-            "content": f"워크스페이스에 연결되었습니다. Claude Code CLI와 대화를 시작하세요.",
+            "content": f"Kubernetes Pod 워크스페이스에 연결되었습니다. AI 에이전트와 대화를 시작하세요.",
             "timestamp": datetime.utcnow().isoformat()
         }
         await websocket.send_text(json.dumps(welcome_message))
@@ -250,13 +170,13 @@ async def user_workspace(websocket: WebSocket, user_id: str):
             user_message = message_data.get('message', '')
             
             if user_message:
-                # Claude Code CLI로 메시지 전달
-                claude_response = await manager.process_user_message(user_id, user_message)
+                # AI 에이전트로 메시지 전달
+                agent_response = await manager.process_user_message(user_id, user_message)
                 
                 # 응답 전송
                 response_data = {
-                    "type": "claude_response",
-                    "content": claude_response,
+                    "type": "agent_response",
+                    "content": agent_response,
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 await websocket.send_text(json.dumps(response_data))
@@ -315,7 +235,7 @@ async def list_agents(user_id: str = Header(..., alias="X-User-Id")):
     try:
         agents_ref = db.collection('agents').where('userId', '==', user_id)
         agents = []
-        async for doc in agents_ref.stream():
+        for doc in agents_ref.stream():
             agent_data = doc.to_dict()
             agent_data['id'] = doc.id
             agents.append(agent_data)
@@ -525,7 +445,7 @@ async def get_dashboard_stats(user_id: str = Header(..., alias="X-User-Id")):
     try:
         agents_ref = db.collection('agents').where('userId', '==', user_id)
         agents = []
-        async for doc in agents_ref.stream():
+        for doc in agents_ref.stream():
             agents.append(doc.to_dict())
         
         total_agents = len(agents)
@@ -559,17 +479,9 @@ if static_dir.exists():
 if __name__ == "__main__":
     import uvicorn
     
-    # Docker 이미지 확인
-    try:
-        docker_client.images.get("claude-workspace:latest")
-        logger.info("Claude workspace image found")
-    except docker.errors.ImageNotFound:
-        logger.error("Claude workspace image not found. Please build it first:")
-        logger.error("cd docker/claude-workspace && docker build -t claude-workspace:latest .")
-        exit(1)
+    logger.info("Starting AI Agent Platform in Kubernetes-native mode")
     
     # 서버 시작
-    import os
     port = int(os.getenv('PORT', 8000))
     uvicorn.run(
         "main:app",

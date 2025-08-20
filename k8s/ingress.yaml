@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-agent-ingress
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: "ai-agent-ip"
+    networking.gke.io/managed-certificates: "ai-agent-ssl-cert"
+    kubernetes.io/ingress.class: "gce"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  rules:
+  - host: ai-agent.yourdomain.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: ai-agent-service
+            port:
+              number: 80
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: ai-agent-ssl-cert
+spec:
+  domains:
+    - ai-agent.yourdomain.com
