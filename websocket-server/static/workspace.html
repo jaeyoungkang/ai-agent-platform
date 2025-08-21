@@ -142,6 +142,17 @@
                 this.setupEventListeners();
             }
             
+            // localStorage에서 사용자 정보 가져오기
+            getStoredUser() {
+                try {
+                    const userStr = localStorage.getItem('user');
+                    return userStr ? JSON.parse(userStr) : null;
+                } catch (e) {
+                    console.warn('Failed to parse stored user data:', e);
+                    return null;
+                }
+            }
+            
             parseUrlParams() {
                 const urlParams = new URLSearchParams(window.location.search);
                 this.sessionId = urlParams.get('session');
@@ -155,15 +166,34 @@
             
             async initializeWorkspace() {
                 try {
-                    // 워크스페이스 상태 복원
+                    // 1. 먼저 localStorage에서 인증된 사용자 정보 확인
+                    const authenticatedUser = this.getStoredUser();
+                    if (authenticatedUser) {
+                        console.log('Found authenticated user in localStorage:', authenticatedUser);
+                        this.userId = authenticatedUser.user_id;
+                        document.getElementById('user-id').textContent = this.userId;
+                    }
+                    
+                    // 2. 워크스페이스 상태 복원 시도
                     const workspace = await API.get(`/api/workspace/${this.sessionId}/restore`);
                     
                     if (workspace) {
-                        this.userId = workspace.userId;
-                        this.agentId = workspace.agentId;
+                        // 인증된 사용자가 있으면 우선 사용, 없으면 워크스페이스 사용자 사용
+                        if (!this.userId) {
+                            this.userId = workspace.userId;
+                            document.getElementById('user-id').textContent = this.userId;
+                        }
                         
-                        // 에이전트 정보 로드
-                        await this.loadAgentInfo();
+                        this.agentId = workspace.agentId;
+                        this.context = workspace.context || 'workspace';  // 컨텍스트 설정
+                        
+                        // 컨텍스트에 따른 UI 초기화
+                        if (this.context === 'agent-create') {
+                            this.initAgentCreationMode();
+                        } else {
+                            // 기존 에이전트 정보 로드
+                            await this.loadAgentInfo();
+                        }
                         
                         // WebSocket 연결
                         this.connectWebSocket();
@@ -174,23 +204,22 @@
                     console.error('Workspace initialization failed:', error);
                     this.updateConnectionStatus('error', '워크스페이스 오류');
                     
-                    // 인증 후 WebSocket 연결 (fallback)
-                    await this.fallbackAuth();
+                    // 인증된 사용자가 있으면 바로 연결, 없으면 로그인 페이지로 이동
+                    if (this.userId) {
+                        console.log('Using authenticated user for fallback connection');
+                        this.connectWebSocket();
+                    } else {
+                        console.log('No authenticated user found, redirecting to login');
+                        alert('로그인이 필요합니다. 로그인 페이지로 이동합니다.');
+                        window.location.href = '/assets/index.html';
+                    }
                 }
             }
             
-            async fallbackAuth() {
-                try {
-                    const authData = await API.post('/api/auth/guest', {});
-                    
-                    if (authData) {
-                        this.userId = authData.user_id;
-                        document.getElementById('user-id').textContent = this.userId;
-                        this.connectWebSocket();
-                    }
-                } catch (error) {
-                    console.error('Fallback auth failed:', error);
-                }
+            redirectToLogin() {
+                console.log('Authentication required, redirecting to login page');
+                alert('로그인이 필요합니다. 로그인 페이지로 이동합니다.');
+                window.location.href = '/assets/index.html';
             }
             
             async loadAgentInfo() {
@@ -229,6 +258,7 @@
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${protocol}//${window.location.host}/workspace/${this.userId}`;
                 
+                console.log('Attempting WebSocket connection to:', wsUrl);
                 this.websocket = new WebSocket(wsUrl);
                 
                 this.websocket.onopen = (event) => {
@@ -292,9 +322,10 @@
                 // Show processing status
                 this.showStatus('메시지 처리 중...');
                 
-                // Send to WebSocket
+                // Send to WebSocket (세션 ID 포함)
                 this.websocket.send(JSON.stringify({
-                    message: message
+                    message: message,
+                    session_id: this.sessionId  // 세션 ID 전달
                 }));
             }
             
@@ -381,6 +412,26 @@
             
             scrollToBottom() {
                 this.chatArea.scrollTop = this.chatArea.scrollHeight;
+            }
+            
+            initAgentCreationMode() {
+                // 에이전트 생성 모드 UI 초기화
+                console.log('Initializing agent creation mode');
+                
+                // 헤더 업데이트
+                const agentName = document.getElementById('agent-name');
+                if (agentName) {
+                    agentName.textContent = '새 에이전트 생성';
+                }
+                
+                // 환영 메시지 추가
+                this.displayMessage('system', '안녕하세요! AI 에이전트를 만들어드릴게요. 어떤 작업을 자동화하고 싶으신가요?');
+                
+                // 사용자 ID 표시
+                const userIdElement = document.getElementById('user-id');
+                if (userIdElement && this.userId) {
+                    userIdElement.textContent = this.userId;
+                }
             }
         }
         

@@ -9,6 +9,8 @@ import json
 import uuid
 import logging
 import os
+import subprocess
+import shutil
 from typing import Dict, Optional
 from datetime import datetime
 from pathlib import Path
@@ -36,41 +38,268 @@ logger = logging.getLogger(__name__)
 # Initialize Firestore
 db = firestore.Client()
 
+class ClaudeCodeProcess:
+    """실제 Claude Code CLI 프로세스 관리자"""
+    
+    def __init__(self, user_id: str, session_id: str):
+        self.user_id = user_id
+        self.session_id = session_id
+        self.process: Optional[subprocess.Popen] = None
+        self.output_buffer = []
+        self.is_running = False
+        
+    async def start(self, initial_context: str = None):
+        """실제 Claude Code CLI 프로세스 시작"""
+        try:
+            # Claude Code CLI 버전 확인
+            claude_path = shutil.which('claude')
+            if not claude_path:
+                logger.error("Claude Code CLI not found")
+                return False
+            
+            # API 키 확인
+            if not os.environ.get('ANTHROPIC_API_KEY'):
+                logger.error("ANTHROPIC_API_KEY not set")
+                return False
+            
+            # Claude Code CLI 실행 명령
+            cmd = ['claude', 'chat']
+            
+            # 에이전트 생성 모드인 경우 시스템 프롬프트 추가
+            if initial_context == 'agent-create':
+                system_prompt = self._get_agent_creation_prompt()
+                cmd.extend(['--system', system_prompt])
+            
+            self.process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            self.is_running = True
+            
+            # 비동기 출력 읽기 시작
+            asyncio.create_task(self._read_output())
+            
+            logger.info(f"Claude Code process started for session {self.session_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start Claude Code: {e}")
+            return False
+    
+    def _get_agent_creation_prompt(self) -> str:
+        """에이전트 생성을 위한 시스템 프롬프트"""
+        return """당신은 AI 에이전트를 생성하는 도우미입니다.
+사용자가 원하는 자동화 작업을 이해하고, 단계별로 에이전트를 구성하도록 도와주세요.
+
+주요 단계:
+1. 에이전트 이름과 목적 정의
+2. 실행 스케줄 설정
+3. 작업 단계 구성
+4. 테스트 및 검증
+5. 최종 생성
+
+자연스럽고 대화형으로 에이전트 생성을 도와주세요.
+
+최대한 간결하게 답변해주세요. 200자 이내로 답변하는 것이 좋습니다."""
+    
+    async def _read_output(self):
+        """비동기로 Claude 출력 읽기"""
+        if not self.process:
+            return
+        
+        while self.is_running and self.process and self.process.poll() is None:
+            try:
+                # stdout에서 줄 단위로 읽기 (비동기)
+                line = await asyncio.get_event_loop().run_in_executor(
+                    None, self.process.stdout.readline
+                )
+                if line:
+                    line = line.strip()
+                    if line:  # 빈 줄 무시
+                        self.output_buffer.append(line)
+                        # 너무 많이 누적되지 않도록 제한
+                        if len(self.output_buffer) > 100:
+                            self.output_buffer = self.output_buffer[-50:]  # 최근 50줄만 유지
+                
+                await asyncio.sleep(0.1)  # CPU 사용률 제어
+                
+            except Exception as e:
+                logger.error(f"Error reading Claude output: {e}")
+                break
+    
+    async def send_message(self, message: str, timeout: float = 30.0) -> str:
+        """Claude Code CLI에 메시지 전송 (파이프 방식)"""
+        try:
+            # 간단한 파이프 통신 방식 사용
+            cmd = ['claude', 'chat']
+            
+            # 에이전트 생성 컨텍스트용 시스템 프롬프트
+            if hasattr(self, '_context') and self._context == 'agent-create':
+                system_prompt = self._get_agent_creation_prompt()
+                cmd.extend(['--append-system-prompt', system_prompt])
+            
+            logger.info(f"Executing Claude command: {' '.join(cmd)}")
+            logger.info(f"Input message: {message}")
+            
+            # subprocess 실행 (파이프 통신)
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # 메시지 전송 및 응답 받기 (bytes로 처리)
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(input=message.encode('utf-8')),
+                timeout=timeout
+            )
+            
+            # bytes를 문자열로 변환
+            stdout = stdout_bytes.decode('utf-8') if stdout_bytes else ""
+            stderr = stderr_bytes.decode('utf-8') if stderr_bytes else ""
+            
+            logger.info(f"Claude stdout: {stdout}")
+            if stderr:
+                logger.warning(f"Claude stderr: {stderr}")
+            
+            if stdout and stdout.strip():
+                response = self._clean_response(stdout)
+                logger.info(f"Claude response for session {self.session_id}: {len(response)} chars")
+                return response
+            else:
+                return "Claude로부터 응답을 받지 못했습니다."
+                
+        except asyncio.TimeoutError:
+            logger.error(f"Claude response timeout for session {self.session_id}")
+            return "Claude 응답 시간이 초과되었습니다. 다시 시도해주세요."
+        except Exception as e:
+            logger.error(f"Error communicating with Claude: {e}")
+            return f"Claude 통신 오류: {str(e)}"
+    
+    def _clean_response(self, response: str) -> str:
+        """응답 정리 (프롬프트 제거 등)"""
+        lines = response.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            # 비어있지 않고 프롬프트가 아닌 줄만 포함
+            if line.strip() and not line.strip().startswith('Human:') and not line.strip().endswith('>'):
+                cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines).strip()
+    
+    def stop(self):
+        """프로세스 종료"""
+        self.is_running = False
+        if self.process:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=5)
+            except Exception as e:
+                logger.error(f"Error stopping Claude process: {e}")
+                try:
+                    self.process.kill()
+                except:
+                    pass
+            finally:
+                self.process = None
+        logger.info(f"Claude process stopped for session {self.session_id}")
+
+
 class UserWorkspace:
-    """사용자별 세션 관리 (Kubernetes-Native)"""
+    """사용자별 Claude Code 세션 관리"""
     
     def __init__(self, user_id: str):
         self.user_id = user_id
-        self.session_data = {}
+        self.claude_processes: Dict[str, ClaudeCodeProcess] = {}  # session_id -> ClaudeCodeProcess
+    
+    async def send_to_claude(self, message: str, agent_id: str = None, context: str = "workspace", session_id: str = None) -> str:
+        """실제 Claude Code CLI와 통신"""
+        logger.info(f"Processing message for user {self.user_id} (context: {context}, session: {session_id})")
         
-    async def send_to_claude(self, message: str, agent_id: str = None) -> str:
-        """메시지 처리 및 시뮬레이션 응답 생성"""
-        logger.info(f"Processing message for user {self.user_id} (agent: {agent_id or 'none'})")
+        # session_id가 없으면 기본 세션 사용
+        if not session_id:
+            session_id = f"default_{self.user_id}"
         
-        # Kubernetes 환경에서 Claude Code CLI 시뮬레이션
-        response = f"""Claude Code CLI 시뮬레이션 응답
-
-사용자 메시지: {message}
-
-현재 Kubernetes Pod 환경에서 실행 중입니다.
-- 환경: GKE Autopilot
-- Pod 리소스: 1-2GB RAM, 0.5-1 CPU
-- 데이터 저장: Firestore
-- 보안: Workload Identity
-
-실제 Claude Code CLI 기능을 사용하려면 다음 중 하나를 구현하세요:
-1. Cloud Run Jobs를 이용한 별도 워크스페이스 서비스
-2. GKE에서 Docker-in-Docker 지원하는 전용 노드풀
-3. 외부 워크스페이스 서비스 연동
-
-현재는 에이전트 생성/관리 기능이 완전히 작동합니다."""
-
+        # Claude 프로세스 가져오거나 생성
+        if session_id not in self.claude_processes:
+            self.claude_processes[session_id] = ClaudeCodeProcess(self.user_id, session_id)
+            # 컨텍스트 저장
+            self.claude_processes[session_id]._context = context
+        
+        claude_process = self.claude_processes[session_id]
+        
+        # 실제 Claude Code에 메시지 전송
+        response = await claude_process.send_message(message)
+        
+        # 에이전트 생성 컨텍스트인 경우 추가 처리
+        if context == "agent-create" and session_id:
+            response = await self._process_agent_creation_response(response, session_id)
+        
         return response
     
+    async def _process_agent_creation_response(self, response: str, session_id: str) -> str:
+        """에이전트 생성 응답 후처리"""
+        # 에이전트 생성 완료 감지
+        if "생성이 완료" in response or "에이전트가 생성" in response or "완료되었습니다" in response:
+            # 실제 에이전트 생성 로직 호출
+            agent_id = await self._create_agent_from_conversation(session_id)
+            if agent_id:
+                response += f"\n\n✅ 에이전트가 성공적으로 생성되었습니다! \n[대시보드로 이동](/assets/dashboard.html)"
+        
+        return response
+    
+    async def _create_agent_from_conversation(self, session_id: str) -> Optional[str]:
+        """대화 내용에서 에이전트 생성"""
+        try:
+            # 워크스페이스 세션 데이터 가져오기
+            workspace_doc = db.collection('workspaces').document(session_id).get()
+            if not workspace_doc.exists:
+                return None
+            
+            workspace_data = workspace_doc.to_dict()
+            agent_config = workspace_data.get('agentConfig', {})
+            
+            # 기본 에이전트 정보 생성
+            agent_ref = db.collection('agents').document()
+            agent_data = {
+                'name': agent_config.get('name', 'Claude Code 에이전트'),
+                'description': agent_config.get('description', 'Claude Code로 생성된 AI 에이전트'),
+                'userId': self.user_id,
+                'status': 'active',
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow(),
+                'lastAccessedAt': datetime.utcnow(),
+                'totalRuns': 0,
+                'successfulRuns': 0,
+                'lastRunAt': None,
+                'tags': ['claude-code', 'ai-generated'],
+                'color': '#3B82F6',
+                'icon': '🤖',
+                'finalPrompt': f"이 에이전트는 Claude Code를 통해 생성되었습니다. 세션 ID: {session_id}"
+            }
+            
+            agent_ref.set(agent_data)
+            logger.info(f"Created agent {agent_ref.id} from Claude conversation")
+            return agent_ref.id
+            
+        except Exception as e:
+            logger.error(f"Error creating agent from conversation: {e}")
+            return None
+    
     async def cleanup(self):
-        """세션 정리"""
-        logger.info(f"Cleaned up session for user {self.user_id}")
-        self.session_data.clear()
+        """모든 세션 정리"""
+        logger.info(f"Cleaning up workspace for user {self.user_id}")
+        for process in self.claude_processes.values():
+            process.stop()
+        self.claude_processes.clear()
 
 class ConnectionManager:
     """WebSocket 연결 관리"""
@@ -98,26 +327,27 @@ class ConnectionManager:
         if user_id in self.active_connections:
             await self.active_connections[user_id].send_text(message)
     
-    async def process_user_message(self, user_id: str, message: str, agent_id: str = None) -> str:
-        """사용자 메시지를 Claude로 전달하고 응답 받기"""
+    async def process_user_message(self, user_id: str, message: str, agent_id: str = None, context: str = "workspace", session_id: str = None) -> str:
+        """사용자 메시지를 Claude Code CLI로 전달하고 응답 받기"""
         if user_id not in self.user_workspaces:
             return "Error: Workspace not found"
         
         workspace = self.user_workspaces[user_id]
-        response = await workspace.send_to_claude(message, agent_id)
+        response = await workspace.send_to_claude(message, agent_id, context, session_id)
         
         # Firestore에 대화 기록 저장
-        await self._save_conversation(user_id, message, response, agent_id)
+        await self._save_conversation(user_id, message, response, agent_id, session_id)
         
         return response
     
-    async def _save_conversation(self, user_id: str, user_message: str, assistant_response: str, agent_id: str = None):
+    async def _save_conversation(self, user_id: str, user_message: str, assistant_response: str, agent_id: str = None, session_id: str = None):
         """Firestore에 대화 기록 저장"""
         try:
             conversation_ref = db.collection('conversations').document()
             conversation_data = {
                 'userId': user_id,
                 'agentId': agent_id,
+                'sessionId': session_id,
                 'messages': [
                     {
                         'role': 'user',
@@ -209,16 +439,69 @@ async def security_headers(request: Request, call_next):
 # 연결 매니저 초기화
 manager = ConnectionManager()
 
+@app.on_event("startup")
+async def startup_event():
+    """서버 시작 시 Claude Code CLI 환경 검증"""
+    logger.info("Validating Claude Code CLI environment...")
+    
+    # Claude Code CLI 설치 확인
+    claude_path = shutil.which('claude')
+    if not claude_path:
+        logger.warning("Claude Code CLI not found, attempting to install...")
+        try:
+            # npm으로 Claude Code 설치 시도
+            result = subprocess.run(['npm', 'install', '-g', '@anthropic-ai/claude-code'], 
+                                    capture_output=True, text=True, timeout=60)
+            if result.returncode == 0:
+                logger.info("Claude Code CLI installed successfully")
+                claude_path = shutil.which('claude')
+            else:
+                logger.error(f"Failed to install Claude Code: {result.stderr}")
+                raise Exception("Claude Code CLI installation failed")
+        except subprocess.TimeoutExpired:
+            logger.error("Claude Code installation timeout")
+            raise Exception("Claude Code installation timeout")
+        except Exception as e:
+            logger.error(f"Error installing Claude Code: {e}")
+            raise
+    
+    if claude_path:
+        logger.info(f"Claude Code CLI found at: {claude_path}")
+        
+        # API 키 확인
+        if not os.environ.get('ANTHROPIC_API_KEY'):
+            logger.warning("ANTHROPIC_API_KEY not set - Claude Code will not work")
+        else:
+            logger.info("ANTHROPIC_API_KEY is configured")
+        
+        # Claude Code 버전 확인
+        try:
+            result = subprocess.run(['claude', '--version'], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                logger.info(f"Claude Code version: {result.stdout.strip()}")
+            else:
+                logger.warning(f"Could not get Claude Code version: {result.stderr}")
+        except Exception as e:
+            logger.warning(f"Error checking Claude Code version: {e}")
+    else:
+        logger.error("Claude Code CLI still not available after installation attempt")
+        raise Exception("Claude Code CLI not available")
+    
+    logger.info("Claude Code CLI environment validation complete")
+
 @app.websocket("/workspace/{user_id}")
 async def user_workspace(websocket: WebSocket, user_id: str):
     """사용자 전용 워크스페이스 - Kubernetes Pod 세션 기반"""
-    await manager.connect(websocket, user_id)
+    logger.info(f"WebSocket connection attempt from user: {user_id}")
     
     try:
+        await manager.connect(websocket, user_id)
+        logger.info(f"WebSocket connected successfully for user: {user_id}")
+        
         # 환영 메시지 전송
         welcome_message = {
             "type": "system",
-            "content": f"Kubernetes Pod 워크스페이스에 연결되었습니다. AI 에이전트와 대화를 시작하세요.",
+            "content": f"Claude Code CLI에 연결되었습니다. 실제 Claude와 대화를 시작하세요.",
             "timestamp": datetime.utcnow().isoformat()
         }
         await websocket.send_text(json.dumps(welcome_message))
@@ -229,23 +512,37 @@ async def user_workspace(websocket: WebSocket, user_id: str):
             data = await websocket.receive_text()
             message_data = json.loads(data)
             user_message = message_data.get('message', '')
+            session_id = message_data.get('session_id')  # 세션 ID 추출
             
             if user_message:
-                # AI 에이전트로 메시지 전달
-                agent_response = await manager.process_user_message(user_id, user_message)
+                # 세션 컨텍스트 확인
+                context = "workspace"  # 기본값
+                if session_id:
+                    workspace_doc = db.collection('workspaces').document(session_id).get()
+                    if workspace_doc.exists:
+                        workspace_data = workspace_doc.to_dict()
+                        context = workspace_data.get('context', 'workspace')
+                
+                # Claude Code CLI로 메시지 전달
+                agent_response = await manager.process_user_message(
+                    user_id, user_message, context=context, session_id=session_id
+                )
                 
                 # 응답 전송
                 response_data = {
-                    "type": "agent_response",
+                    "type": "claude_response",
                     "content": agent_response,
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 await websocket.send_text(json.dumps(response_data))
                 
     except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for user: {user_id}")
         manager.disconnect(user_id)
     except Exception as e:
         logger.error(f"WebSocket error for user {user_id}: {e}")
+        logger.error(f"WebSocket error type: {type(e).__name__}")
+        logger.error(f"WebSocket error details: {str(e)}")
         manager.disconnect(user_id)
 
 @app.get("/health")
@@ -834,6 +1131,46 @@ async def create_workspace(agent_id: str, user_id: str = Header(..., alias="X-Us
     except Exception as e:
         logger.error(f"Error creating workspace for agent {agent_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to create workspace")
+
+@app.post("/api/agents/create-session")
+async def create_agent_session(user_id: str = Header(..., alias="X-User-Id")):
+    """에이전트 생성을 위한 워크스페이스 세션 생성"""
+    try:
+        session_id = str(uuid.uuid4())
+        workspace_ref = db.collection('workspaces').document(session_id)
+        
+        workspace_data = {
+            'sessionId': session_id,
+            'agentId': None,  # 에이전트 생성 중이므로 null
+            'userId': user_id,
+            'context': 'agent-create',  # 핵심: 컨텍스트 설정
+            'status': 'active',
+            'createdAt': datetime.utcnow(),
+            'lastActivityAt': datetime.utcnow(),
+            'messages': [],
+            'agentConfig': {
+                'name': None,
+                'description': None,
+                'schedule': None,
+                'tasks': [],
+                'status': 'draft'
+            }
+        }
+        
+        workspace_ref.set(workspace_data)
+        
+        logger.info(f"Created agent creation session {session_id} for user {user_id}")
+        
+        return {
+            'sessionId': session_id,
+            'wsUrl': f'/workspace/{user_id}',
+            'redirectUrl': f'/assets/workspace.html?session={session_id}',
+            'context': 'agent-create'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creating agent session for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create agent session")
 
 @app.get("/api/workspace/{session_id}/restore")
 async def restore_workspace(session_id: str):

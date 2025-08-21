@@ -102,6 +102,33 @@ class Utils {
             }
         }
     };
+
+    /**
+     * 사용자 인증 관리
+     */
+    static auth = {
+        setUser(userData) {
+            Utils.storage.set('user', userData);
+            console.log('User data saved to localStorage:', userData);
+        },
+        
+        getUser() {
+            return Utils.storage.get('user', null);
+        },
+        
+        getUserId() {
+            const user = this.getUser();
+            return user ? user.user_id : null;
+        },
+        
+        clearUser() {
+            Utils.storage.remove('user');
+        },
+        
+        isAuthenticated() {
+            return this.getUser() !== null;
+        }
+    };
 }
 
 // =============================================================================

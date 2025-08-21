@@ -626,10 +626,25 @@
                                 LoadingManager.hide();
                                 
                                 if (authResult && authResult.success) {
+                                    // 사용자 정보를 localStorage에 저장
+                                    const userData = {
+                                        user_id: authResult.user_id,
+                                        email: userInfo.email,
+                                        name: userInfo.name,
+                                        picture: userInfo.picture
+                                    };
+                                    
+                                    try {
+                                        localStorage.setItem('user', JSON.stringify(userData));
+                                        console.log('User data saved to localStorage:', userData);
+                                    } catch (e) {
+                                        console.warn('Failed to save user data:', e);
+                                    }
+                                    
                                     Notification.success('Google 로그인이 성공했습니다!');
                                     
                                     setTimeout(() => {
-                                        window.location.href = `/assets/onboarding.html?user_id=${authResult.user_id}`;
+                                        window.location.href = `/assets/dashboard.html`;
                                     }, 1000);
                                 } else {
                                     throw new Error('서버 인증에 실패했습니다.');

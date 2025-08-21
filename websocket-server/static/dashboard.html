@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 에이전트 대시보드</title>
+    <!-- Updated: 2025-08-21 15:35 - Removed guest auth -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/assets/styles.css">
     <script src="/assets/common.js"></script>
@@ -144,27 +145,47 @@
                 this.setupEventListeners();
             }
             
+            // localStorage에서 사용자 정보 가져오기
+            getStoredUser() {
+                try {
+                    const userStr = localStorage.getItem('user');
+                    console.log('Raw localStorage user data:', userStr);
+                    const userData = userStr ? JSON.parse(userStr) : null;
+                    console.log('Parsed user data:', userData);
+                    return userData;
+                } catch (e) {
+                    console.warn('Failed to parse stored user data:', e);
+                    return null;
+                }
+            }
+            
             async initializeAuth() {
                 try {
-                    // 게스트 세션 생성 또는 기존 세션 확인
-                    const response = await fetch('/api/auth/guest', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-                    
-                    if (response.ok) {
-                        const authData = await response.json();
-                        this.userId = authData.user_id;
-                        document.getElementById('user-id').textContent = this.userId;
+                    // localStorage에서 인증된 사용자 정보 확인
+                    const authenticatedUser = this.getStoredUser();
+                    if (authenticatedUser) {
+                        console.log('Found authenticated user in localStorage:', authenticatedUser);
+                        this.userId = authenticatedUser.user_id;
+                        document.getElementById('user-id').textContent = `${authenticatedUser.name} (${authenticatedUser.user_id})`;
                         
                         // 에이전트 목록 로드
                         await this.loadAgents();
-                    } else {
-                        throw new Error('Failed to create session');
+                        return;
                     }
+                    
+                    // 인증된 사용자가 없으면 로그인 페이지로 리다이렉트
+                    console.log('No authenticated user found, redirecting to login');
+                    this.showError('로그인이 필요합니다. 로그인 페이지로 이동합니다.');
+                    setTimeout(() => {
+                        window.location.href = '/assets/index.html';
+                    }, 2000);
+                    
                 } catch (error) {
                     console.error('Authentication failed:', error);
-                    this.showError('인증에 실패했습니다.');
+                    this.showError('인증에 실패했습니다. 로그인 페이지로 이동합니다.');
+                    setTimeout(() => {
+                        window.location.href = '/assets/index.html';
+                    }, 2000);
                 }
             }
             
@@ -319,43 +340,27 @@
             
             async createNewAgent() {
                 try {
-                    // 새 에이전트 생성 API 호출
-                    const response = await fetch('/api/agents', {
+                    // 에이전트 생성 세션 API 호출 (phase3 구현에 맞춤)
+                    const response = await fetch('/api/agents/create-session', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-User-Id': this.userId
-                        },
-                        body: JSON.stringify({
-                            name: `새 에이전트 ${this.agents.length + 1}`,
-                            description: '',
-                            tags: [],
-                            color: '#3B82F6',
-                            icon: '🤖'
-                        })
+                        }
                     });
                     
                     if (response.ok) {
-                        const agent = await response.json();
+                        const sessionData = await response.json();
+                        console.log('Agent creation session created:', sessionData);
                         
-                        // 워크스페이스 생성 및 이동
-                        const workspaceResponse = await fetch(`/api/agents/${agent.id}/workspace`, {
-                            method: 'POST',
-                            headers: { 'X-User-Id': this.userId }
-                        });
-                        
-                        if (workspaceResponse.ok) {
-                            const workspace = await workspaceResponse.json();
-                            window.location.href = `/assets/workspace.html?session=${workspace.sessionId}`;
-                        } else {
-                            throw new Error('Failed to create workspace');
-                        }
+                        // 워크스페이스로 이동 (에이전트 생성 컨텍스트로)
+                        window.location.href = `/assets/workspace.html?session=${sessionData.sessionId}`;
                     } else {
-                        throw new Error('Failed to create agent');
+                        throw new Error('Failed to create agent session');
                     }
                 } catch (error) {
-                    console.error('Failed to create agent:', error);
-                    this.showError('에이전트 생성에 실패했습니다.');
+                    console.error('Failed to create agent session:', error);
+                    this.showError('에이전트 생성 세션을 시작할 수 없습니다.');
                 }
             }
             
@@ -417,6 +422,19 @@
                     }
                 }
             );
+        };
+        
+        // 디버깅을 위한 전역 함수들
+        window.clearUserData = () => {
+            localStorage.removeItem('user');
+            console.log('User data cleared from localStorage');
+            window.location.reload();
+        };
+        
+        window.getUserData = () => {
+            const userData = localStorage.getItem('user');
+            console.log('Current user data:', userData);
+            return userData;
         };
         
         // 애플리케이션 초기화
