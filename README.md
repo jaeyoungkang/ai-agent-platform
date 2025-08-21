@@ -2,7 +2,7 @@
 
 **Claude Code CLI 기반 AI 에이전트 개발 플랫폼**
 
-![Status](https://img.shields.io/badge/Status-Dashboard%20UX%20Complete-green)
+![Status](https://img.shields.io/badge/Status-Production%20Deployed-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-1인1컨테이너-blue)
 ![License](https://img.shields.io/badge/License-Private-red)
 
@@ -12,42 +12,29 @@
 
 대시보드 중심의 에이전트 관리 시스템으로, 여러 AI 에이전트를 효율적으로 생성하고 관리할 수 있는 웹 기반 플랫폼입니다.
 
-## 🚀 빠른 시작
+## 🌍 라이브 서비스
 
-### 1. 필수 요구사항
-- Docker Desktop
-- Python 3.9+
-- Node.js 18+ (Docker 이미지용)
-- Claude API Key
+### 즉시 사용 가능
+**서비스 URL**: http://oh-my-agent.info  
+**대시보드**: http://oh-my-agent.info/static/dashboard.html  
+**API 상태**: http://oh-my-agent.info/health
 
-### 2. 설치 및 실행
+### 로컬 개발 환경
 
 ```bash
 # 1. 저장소 클론
-git clone <repository-url>
+git clone https://github.com/jaeyoungkang/ai-agent-platform.git
 cd ai-agent-platform
 
-# 2. Docker 워크스페이스 이미지 빌드
-docker build -t claude-workspace:latest docker/claude-workspace/
-
-# 3. WebSocket 서버 설정
+# 2. 로컬 서버 실행
 cd websocket-server
 python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
+CLOUDBUILD_MOCK=true PORT=8000 python main.py
 
-# 4. 환경변수 설정
-# .env.local 파일 생성 (이미 생성됨)
-cp .env.local.example .env.local  # 예시 파일이 있다면
-# 또는 직접 .env.local 파일의 ANTHROPIC_API_KEY 값을 수정
-
-# 5. 서버 실행
-python main.py
-```
-
-### 3. 브라우저에서 접속
-```
-http://localhost:8000
+# 3. 브라우저에서 접속
+open http://localhost:8000
 ```
 
 ## 🏗️ 아키텍처
@@ -132,10 +119,16 @@ ai-agent-platform/
 - 전문적 사무 디자인 적용
 - 1인 1컨테이너 아키텍처 최적화
 
-### 다음: 프로덕션 배포 🔄
-- Google Kubernetes Engine
+### 현재: 프로덕션 서비스 운영 중 ✅
+- Google Kubernetes Engine (GKE Autopilot)
+- GitHub Actions CI/CD 완전 자동화
+- Artifact Registry + LoadBalancer
+- 도메인 연결: oh-my-agent.info
+
+### 다음: 고급 기능 확장 🔄
 - 고급 에이전트 기능 (스케줄링, 이력 관리)
 - 팀 협업 및 마켓플레이스
+- HTTPS 적용 및 모니터링 강화
 
 ## 🤝 기여 가이드
 
@@ -175,6 +168,6 @@ docker build -t claude-workspace:latest docker/claude-workspace/
 
 ---
 
-**개발 상태**: ✅ 대시보드 UX 완성 + 문서 통합 완료  
-**다음 목표**: 🚀 클라우드 배포 및 확장 기능  
-**최종 업데이트**: 2025년 8월 19일
+**개발 상태**: ✅ 프로덕션 서비스 운영 중 + CI/CD 완전 자동화  
+**다음 목표**: 🚀 고급 기능 확장 및 성능 최적화  
+**최종 업데이트**: 2025년 8월 21일

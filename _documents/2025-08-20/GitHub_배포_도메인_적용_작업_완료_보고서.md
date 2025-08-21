@@ -11,7 +11,7 @@
 
 ### 작업 전 상황
 ```
-❌ 수동 배포 방식
+✅ GitHub Actions CI/CD 자동화 완료
 - docker build → docker push → kubectl apply 수동 실행
 - IP 기반 접속: http://34.64.193.42/static/dashboard.html
 - HTTP만 지원 (보안 취약)
