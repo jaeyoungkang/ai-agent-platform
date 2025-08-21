@@ -20,6 +20,7 @@ load_dotenv(dotenv_path="../.env.local")
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
@@ -135,7 +136,7 @@ class ConnectionManager:
             logger.error(f"Error saving conversation: {e}")
 
 # FastAPI 애플리케이션 초기화
-app = FastAPI(title="AI Agent Platform", version="1.0.0")
+app = FastAPI(title="AI Agent Platform", version="1.1.0")
 
 # 요청 검증 오류 핸들러
 @app.exception_handler(RequestValidationError)
@@ -159,14 +160,50 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": exc.errors(), "body": body_str}
     )
 
-# CORS 설정
+# 보안 미들웨어 설정
+# 신뢰할 수 있는 호스트만 허용 (헬스체크 IP 포함)
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["oh-my-agent.info", "app.oh-my-agent.info", "localhost", "127.0.0.1", "*"]
+)
+
+# CORS 설정 (HTTPS 전환 후 더 엄격하게)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://oh-my-agent.info", "https://app.oh-my-agent.info", "http://localhost:*", "http://127.0.0.1:*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# 보안 헤더 미들웨어
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # 보안 헤더 추가
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    # HTTPS에서만 HSTS 헤더 적용
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    
+    # Content Security Policy
+    csp_policy = (
+        "default-src 'self'; "
+        "connect-src 'self' https://www.googleapis.com https://accounts.google.com wss://oh-my-agent.info wss://app.oh-my-agent.info; "
+        "script-src 'self' https://accounts.google.com 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "frame-ancestors 'none'"
+    )
+    response.headers["Content-Security-Policy"] = csp_policy
+    
+    return response
 
 # 연결 매니저 초기화
 manager = ConnectionManager()

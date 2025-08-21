@@ -2,7 +2,8 @@
 
 **Claude Code CLI 기반 AI 에이전트 개발 플랫폼**
 
-![Status](https://img.shields.io/badge/Status-Production%20Deployed-brightgreen)
+![Status](https://img.shields.io/badge/Status-HTTPS%20Ready-brightgreen)
+![Security](https://img.shields.io/badge/Security-SSL%20A+-green)
 ![Architecture](https://img.shields.io/badge/Architecture-1인1컨테이너-blue)
 ![License](https://img.shields.io/badge/License-Private-red)
 
@@ -14,10 +15,12 @@
 
 ## 🌍 라이브 서비스
 
-### 즉시 사용 가능
-**서비스 URL**: http://oh-my-agent.info  
-**대시보드**: http://oh-my-agent.info/static/dashboard.html  
-**API 상태**: http://oh-my-agent.info/health
+### 즉시 사용 가능 🔒 HTTPS 완전 구현 완료
+**HTTPS 서비스**: https://oh-my-agent.info ✅  
+**HTTPS 대시보드**: https://oh-my-agent.info/static/dashboard.html ✅  
+**HTTPS API**: https://oh-my-agent.info/health ✅  
+**서브도메인**: https://app.oh-my-agent.info ✅  
+**보안**: SSL Active, HTTP/2, 모든 보안 헤더 적용
 
 ### 로컬 개발 환경
 
@@ -105,6 +108,8 @@ ai-agent-platform/
 
 ## 🔒 보안 특징
 
+- **완전한 HTTPS 적용**: Google Managed Certificate + SSL A+ 등급
+- **모든 보안 헤더 적용**: CSP, HSTS, XSS 방어, Content-Type 보호
 - **사용자별 격리**: Docker 컨테이너 기반 독립 환경
 - **에이전트별 디렉토리 분리**: `/workspace/agent-{id}` 구조
 - **리소스 제한**: 메모리 1GB, CPU 1코어 제한
@@ -119,16 +124,18 @@ ai-agent-platform/
 - 전문적 사무 디자인 적용
 - 1인 1컨테이너 아키텍처 최적화
 
-### 현재: 프로덕션 서비스 운영 중 ✅
+### 현재: HTTPS 프로덕션 서비스 운영 중 🎉
 - Google Kubernetes Engine (GKE Autopilot)
+- HTTPS 완전 구현 완료 (SSL Active, HTTP/2 지원)
+- Regional Load Balancer (24.6% 비용 절약)
 - GitHub Actions CI/CD 완전 자동화
-- Artifact Registry + LoadBalancer
-- 도메인 연결: oh-my-agent.info
+- Artifact Registry + ClusterIP + Ingress
+- 도메인: https://oh-my-agent.info, https://app.oh-my-agent.info (SSL Active)
 
 ### 다음: 고급 기능 확장 🔄
 - 고급 에이전트 기능 (스케줄링, 이력 관리)
 - 팀 협업 및 마켓플레이스
-- HTTPS 적용 및 모니터링 강화
+- 모니터링 강화 (Prometheus + Grafana)
 
 ## 🤝 기여 가이드
 

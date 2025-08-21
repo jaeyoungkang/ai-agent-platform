@@ -16,7 +16,7 @@ spec:
       serviceAccountName: ai-agent-ksa
       containers:
       - name: api-server
-        image: asia-northeast3-docker.pkg.dev/ai-agent-platform-469401/ai-agent-repo/api-server:latest
+        image: asia-northeast3-docker.pkg.dev/ai-agent-platform-469401/ai-agent-repo/api-server:https-v2
         ports:
         - containerPort: 8000
         env:

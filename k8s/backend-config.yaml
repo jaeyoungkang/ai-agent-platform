@@ -1,0 +1,16 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: ai-agent-backend-config
+spec:
+  # 연결 시간 초과 설정
+  timeoutSec: 30
+  # 헬스체크 설정
+  healthCheck:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /health
+    port: 8000

@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-agent-https-ingress
+  annotations:
+    # Google Managed Certificate 사용
+    networking.gke.io/managed-certificates: "ai-agent-ssl-cert"
+    # HTTPS 강제 리다이렉션
+    ingress.gcp.io/force-ssl-redirect: "true"
+    # Regional Load Balancer 사용 (비용 절약)
+    kubernetes.io/ingress.class: "gce"
+    # 백엔드 설정
+    cloud.google.com/backend-config: '{"default": "ai-agent-backend-config"}'
+spec:
+  rules:
+  # 루트 도메인
+  - host: oh-my-agent.info
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: ai-agent-service
+            port:
+              number: 80
+  # 서브 도메인
+  - host: app.oh-my-agent.info
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: ai-agent-service
+            port:
+              number: 80
