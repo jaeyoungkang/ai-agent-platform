@@ -2,7 +2,7 @@
 
 **Claude Code CLI 기반 AI 에이전트 개발 플랫폼**
 
-![Status](https://img.shields.io/badge/Status-HTTPS%20Ready-brightgreen)
+![Status](https://img.shields.io/badge/Status-Claude%20CLI%20완전통합-brightgreen)
 ![Security](https://img.shields.io/badge/Security-SSL%20A+-green)
 ![Architecture](https://img.shields.io/badge/Architecture-1인1컨테이너-blue)
 ![License](https://img.shields.io/badge/License-Private-red)
