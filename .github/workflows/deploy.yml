@@ -31,28 +31,12 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 'Debug GitHub Context'
-      run: |
-        echo "GitHub Actor: ${{ github.actor }}"
-        echo "GitHub Repository: ${{ github.repository }}"
-        echo "GitHub Ref: ${{ github.ref }}"
-        echo "GitHub SHA: ${{ github.sha }}"
-
     - id: 'auth'
       name: 'Authenticate to Google Cloud'
       uses: 'google-github-actions/auth@v2'
       with:
         workload_identity_provider: 'projects/759247706259/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
         service_account: 'github-actions-sa@ai-agent-platform-469401.iam.gserviceaccount.com'
-        token_format: 'access_token'
-
-    - name: 'Verify Authentication'
-      run: |
-        echo "Authentication successful!"
-        gcloud auth list
-        gcloud config list
-        echo "Project: $(gcloud config get-value project)"
-        echo "Access Token (first 20 chars): $(gcloud auth print-access-token | head -c 20)..."
 
     - name: 'Set up Cloud SDK'
       uses: 'google-github-actions/setup-gcloud@v2'
@@ -61,25 +45,12 @@ jobs:
 
     - name: 'Configure Docker'
       run: |-
-        echo "Configuring Docker for Artifact Registry..."
         gcloud --quiet auth configure-docker asia-northeast3-docker.pkg.dev
-        echo "Docker configuration complete!"
-
-    - name: 'Install and configure kubectl'
-      run: |
-        echo "Installing gke-gcloud-auth-plugin..."
-        gcloud components install gke-gcloud-auth-plugin --quiet || echo "Plugin may already be installed"
-        echo "Setting up kubectl authentication..."
-        export USE_GKE_GCLOUD_AUTH_PLUGIN=True
-        echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
 
     - name: 'Get GKE credentials'
       run: |-
-        echo "Fetching GKE cluster credentials..."
+        export USE_GKE_GCLOUD_AUTH_PLUGIN=True
         gcloud container clusters get-credentials "$GKE_CLUSTER" --zone "$GKE_ZONE" --project "$PROJECT_ID"
-        echo "Testing kubectl connection..."
-        kubectl version --client=true
-        kubectl get nodes || echo "Failed to get nodes, but continuing..."
 
     - name: 'Build Docker image'
       run: |-
@@ -88,19 +59,10 @@ jobs:
           -t "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA" \
           -t "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:latest" .
 
-    - name: 'Test Artifact Registry Access'
-      run: |
-        echo "Testing Artifact Registry permissions..."
-        gcloud artifacts repositories describe ai-agent-repo \
-          --location=asia-northeast3 \
-          --project=$PROJECT_ID || echo "Failed to describe repository"
-        
     - name: 'Push Docker image'
       run: |-
-        echo "Pushing Docker images to Artifact Registry..."
         docker push "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA"
         docker push "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:latest"
-        echo "Docker push complete!"
 
     - name: 'Deploy to GKE'
       run: |-
