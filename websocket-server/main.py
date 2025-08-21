@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import google.cloud.firestore as firestore
 from auth import auth_manager, google_auth, beta_manager
+from email_service import email_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -283,6 +284,205 @@ async def get_beta_count():
         logger.error(f"Error getting beta count: {e}")
         return {"count": 17, "max": 30, "remaining": 13}  # 기본값
 
+# 베타 신청 데이터 모델
+class BetaApplicationRequest(BaseModel):
+    email: str
+    name: str
+    company: Optional[str] = ""
+    use_case: str
+    experience: str
+    agree_terms: bool
+
+@app.post("/api/beta/apply")
+async def apply_beta(request: Request):
+    """베타 참여 신청"""
+    try:
+        # 원시 요청 데이터 로깅
+        body = await request.body()
+        logger.info(f"Beta application raw body: {body.decode('utf-8') if body else 'Empty'}")
+        
+        # JSON 파싱
+        try:
+            request_data = await request.json()
+            logger.info(f"Beta application parsed data: {request_data}")
+        except Exception as parse_error:
+            logger.error(f"Beta application JSON parsing error: {parse_error}")
+            raise HTTPException(status_code=400, detail="Invalid JSON format")
+        
+        # Pydantic 모델 검증
+        try:
+            application_data = BetaApplicationRequest(**request_data)
+        except Exception as validation_error:
+            logger.error(f"Beta application validation error: {validation_error}")
+            raise HTTPException(status_code=422, detail=str(validation_error))
+        
+        # 이미 신청한 이메일인지 확인
+        existing_applications = db.collection('beta_applications').where('email', '==', application_data.email).stream()
+        if len(list(existing_applications)) > 0:
+            raise HTTPException(status_code=409, detail="이미 신청하신 이메일입니다.")
+        
+        # 베타 신청 데이터 저장
+        application_ref = db.collection('beta_applications').document()
+        applied_at = datetime.utcnow()
+        
+        application_doc = {
+            'email': application_data.email,
+            'name': application_data.name,
+            'company': application_data.company,
+            'use_case': application_data.use_case,
+            'experience': application_data.experience,
+            'status': 'pending',
+            'applied_at': applied_at,
+            'approved_at': None,
+            'approved_by': None,
+            'notes': ''
+        }
+        
+        application_ref.set(application_doc)
+        
+        # 이메일 발송 (비동기)
+        user_data = {
+            'name': application_data.name,
+            'email': application_data.email,
+            'company': application_data.company,
+            'use_case': application_data.use_case,
+            'experience': application_data.experience,
+            'applied_at': applied_at.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # 관리자 알림 이메일 발송
+        admin_email_success = await email_service.send_beta_application_notification(user_data)
+        
+        # 신청자 접수 확인 이메일 발송
+        confirmation_email_success = await email_service.send_application_confirmation(
+            application_data.email, 
+            application_data.name,
+            applied_at.strftime('%Y-%m-%d %H:%M:%S')
+        )
+        
+        logger.info(f"Beta application submitted: {application_data.email}")
+        logger.info(f"Admin notification email: {'sent' if admin_email_success else 'failed'}")
+        logger.info(f"Confirmation email: {'sent' if confirmation_email_success else 'failed'}")
+        
+        return {
+            "success": True,
+            "message": "베타 신청이 완료되었습니다. 이메일을 확인해주세요.",
+            "application_id": application_ref.id,
+            "email_status": {
+                "admin_notification": admin_email_success,
+                "user_confirmation": confirmation_email_success
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing beta application: {e}")
+        raise HTTPException(status_code=500, detail="베타 신청 처리 중 오류가 발생했습니다.")
+
+# 화이트리스트 관리 함수
+async def check_whitelist(email: str) -> bool:
+    """화이트리스트 확인"""
+    try:
+        whitelist_ref = db.collection('whitelist').where('email', '==', email).where('status', '==', 'active')
+        docs = list(whitelist_ref.stream())
+        return len(docs) > 0
+    except Exception as e:
+        logger.error(f"Error checking whitelist for {email}: {e}")
+        return False
+
+async def add_to_whitelist(email: str, name: str, admin_email: str = "admin", notes: str = "") -> bool:
+    """화이트리스트 추가"""
+    try:
+        whitelist_ref = db.collection('whitelist').document()
+        whitelist_data = {
+            'email': email,
+            'name': name,
+            'added_at': datetime.utcnow(),
+            'added_by': admin_email,
+            'status': 'active',
+            'notes': notes
+        }
+        whitelist_ref.set(whitelist_data)
+        
+        # 승인 이메일 발송
+        await email_service.send_approval_notification(email, name)
+        
+        logger.info(f"Added {email} to whitelist by {admin_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Error adding {email} to whitelist: {e}")
+        return False
+
+# 화이트리스트 관리 API
+class WhitelistAddRequest(BaseModel):
+    email: str
+    name: str
+    notes: Optional[str] = ""
+
+@app.post("/api/admin/whitelist/add")
+async def add_whitelist(request: WhitelistAddRequest):
+    """화이트리스트에 이메일 추가"""
+    try:
+        # 이미 화이트리스트에 있는지 확인
+        if await check_whitelist(request.email):
+            raise HTTPException(status_code=409, detail="이미 화이트리스트에 등록된 이메일입니다.")
+        
+        success = await add_to_whitelist(request.email, request.name, "admin", request.notes)
+        
+        if success:
+            return {"success": True, "message": f"{request.email}이 화이트리스트에 추가되었습니다."}
+        else:
+            raise HTTPException(status_code=500, detail="화이트리스트 추가에 실패했습니다.")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in add_whitelist API: {e}")
+        raise HTTPException(status_code=500, detail="화이트리스트 추가 중 오류가 발생했습니다.")
+
+@app.get("/api/admin/whitelist")
+async def get_whitelist():
+    """화이트리스트 조회"""
+    try:
+        whitelist_ref = db.collection('whitelist').order_by('added_at', direction=firestore.Query.DESCENDING)
+        whitelist = []
+        
+        for doc in whitelist_ref.stream():
+            whitelist_data = doc.to_dict()
+            whitelist_data['id'] = doc.id
+            whitelist.append(whitelist_data)
+        
+        return {"whitelist": whitelist, "count": len(whitelist)}
+        
+    except Exception as e:
+        logger.error(f"Error fetching whitelist: {e}")
+        raise HTTPException(status_code=500, detail="화이트리스트 조회에 실패했습니다.")
+
+@app.delete("/api/admin/whitelist/{email}")
+async def remove_whitelist(email: str):
+    """화이트리스트에서 이메일 제거"""
+    try:
+        # 해당 이메일의 화이트리스트 문서 찾기
+        whitelist_ref = db.collection('whitelist').where('email', '==', email)
+        docs = list(whitelist_ref.stream())
+        
+        if len(docs) == 0:
+            raise HTTPException(status_code=404, detail="화이트리스트에서 찾을 수 없는 이메일입니다.")
+        
+        # 모든 매칭되는 문서 삭제 (중복 방지)
+        for doc in docs:
+            doc.reference.delete()
+        
+        logger.info(f"Removed {email} from whitelist")
+        return {"success": True, "message": f"{email}이 화이트리스트에서 제거되었습니다."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error removing {email} from whitelist: {e}")
+        raise HTTPException(status_code=500, detail="화이트리스트 제거에 실패했습니다.")
+
 # Google OAuth 인증 모델
 class GoogleAuthRequest(BaseModel):
     google_token: str
@@ -332,15 +532,20 @@ async def google_auth(request: Request):
         if not user_info['user_id']:
             raise HTTPException(status_code=401, detail="Invalid user info")
         
-        # 베타 사용자 등록 가능 여부 확인
-        if not await beta_manager.can_register_beta_user():
-            # 기존 사용자인지 확인
-            existing_user = await beta_manager.get_user_by_google_id(user_info['user_id'])
-            if not existing_user:
-                raise HTTPException(status_code=403, detail="Beta slots are full")
+        # 화이트리스트 확인
+        is_whitelisted = await check_whitelist(user_info['email'])
+        if not is_whitelisted:
+            raise HTTPException(
+                status_code=403, 
+                detail="베타 참여 승인이 필요합니다. 먼저 베타 신청을 완료해주세요."
+            )
+        
+        # 기존 사용자인지 확인
+        existing_user = await beta_manager.get_user_by_google_id(user_info['user_id'])
+        if existing_user:
             user_data = existing_user
         else:
-            # 새 베타 사용자 등록
+            # 새 베타 사용자 등록 (화이트리스트 승인된 사용자)
             user_data = await beta_manager.register_beta_user(user_info)
         
         return {
