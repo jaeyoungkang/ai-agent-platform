@@ -196,8 +196,8 @@ async def security_headers(request: Request, call_next):
     csp_policy = (
         "default-src 'self'; "
         "connect-src 'self' https://www.googleapis.com https://accounts.google.com wss://oh-my-agent.info wss://app.oh-my-agent.info; "
-        "script-src 'self' https://accounts.google.com 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' https://accounts.google.com https://cdn.tailwindcss.com 'unsafe-inline'; "
+        "style-src 'self' https://cdn.tailwindcss.com 'unsafe-inline'; "
         "img-src 'self' data: https:; "
         "font-src 'self' data:; "
         "frame-ancestors 'none'"

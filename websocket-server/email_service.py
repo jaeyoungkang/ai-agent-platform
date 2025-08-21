@@ -30,6 +30,14 @@ class EmailService:
     
     def _send_email(self, to_email: str, subject: str, html_content: str) -> bool:
         """실제 이메일 발송 처리"""
+        # 환경변수가 설정되지 않은 경우 개발 모드로 시뮬레이션
+        if not all([self.username, self.password, self.from_email, self.apply_receive_email]):
+            logger.info(f"[개발 모드] 이메일 발송 시뮬레이션")
+            logger.info(f"  받는 사람: {to_email}")
+            logger.info(f"  제목: {subject}")
+            logger.info(f"  내용 길이: {len(html_content)} chars")
+            return True
+            
         try:
             # 이메일 메시지 생성
             msg = MIMEMultipart('alternative')
