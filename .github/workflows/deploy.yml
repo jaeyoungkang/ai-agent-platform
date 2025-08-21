@@ -56,6 +56,8 @@ jobs:
 
     - name: 'Set up Cloud SDK'
       uses: 'google-github-actions/setup-gcloud@v2'
+      with:
+        install_components: 'gke-gcloud-auth-plugin'
 
     - name: 'Configure Docker'
       run: |-
@@ -63,9 +65,21 @@ jobs:
         gcloud --quiet auth configure-docker asia-northeast3-docker.pkg.dev
         echo "Docker configuration complete!"
 
+    - name: 'Install and configure kubectl'
+      run: |
+        echo "Installing gke-gcloud-auth-plugin..."
+        gcloud components install gke-gcloud-auth-plugin --quiet || echo "Plugin may already be installed"
+        echo "Setting up kubectl authentication..."
+        export USE_GKE_GCLOUD_AUTH_PLUGIN=True
+        echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
+
     - name: 'Get GKE credentials'
       run: |-
-        gcloud container clusters get-credentials "$GKE_CLUSTER" --zone "$GKE_ZONE"
+        echo "Fetching GKE cluster credentials..."
+        gcloud container clusters get-credentials "$GKE_CLUSTER" --zone "$GKE_ZONE" --project "$PROJECT_ID"
+        echo "Testing kubectl connection..."
+        kubectl version --client=true
+        kubectl get nodes || echo "Failed to get nodes, but continuing..."
 
     - name: 'Build Docker image'
       run: |-
