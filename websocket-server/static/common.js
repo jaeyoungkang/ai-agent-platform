@@ -61,8 +61,8 @@ class Utils {
      * 쿠키 읽기
      */
     static getCookie(name) {
-        return document.cookie.split('; ').find(row => row.startsWith(name + '='))
-            ?.split('=')[1]?.let(decodeURIComponent) || null;
+        const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+        return value ? decodeURIComponent(value.split('=')[1]) : null;
     }
 
     /**

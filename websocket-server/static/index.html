@@ -74,9 +74,6 @@
                 <button id="demo-btn" class="btn btn-secondary text-xl px-8 py-4 rounded-lg shadow-lg">
                     데모 보기
                 </button>
-                <button id="docs-btn" class="btn btn-outline text-xl px-8 py-4 rounded-lg">
-                    문서 보기
-                </button>
             </div>
         </div>
     </div>
@@ -448,10 +445,6 @@
                 document.getElementById('demo-btn').addEventListener('click', 
                     this.showDemo.bind(this));
                     
-                // 문서 보기 버튼
-                document.getElementById('docs-btn').addEventListener('click', 
-                    this.showDocs.bind(this));
-                    
                 // 모달 닫기
                 document.getElementById('modal-close-btn').addEventListener('click', 
                     this.hideSignupModal.bind(this));
@@ -531,11 +524,6 @@
                 const demoSection = document.getElementById('demo-section');
                 demoSection.classList.remove('hidden');
                 demoSection.scrollIntoView({ behavior: 'smooth' });
-            }
-            
-            showDocs() {
-                // 현재는 대시보드로 이동 (향후 문서 페이지 구현)
-                window.location.href = '/assets/dashboard.html';
             }
             
             async handleFormSubmit(event) {
