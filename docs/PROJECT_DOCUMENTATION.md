@@ -2,7 +2,8 @@
 
 **프로젝트명**: Claude Code CLI 기반 AI 에이전트 플랫폼  
 **개발 일자**: 2025년 8월 19일  
-**개발 상태**: ✅ **대시보드 UX 완성** (에이전트 관리 시스템)  
+**최종 업데이트**: 2025년 8월 21일 (웹 라우팅 구조 개선)  
+**개발 상태**: ✅ **대시보드 UX 완성 + 웹 라우팅 최적화**  
 **아키텍처**: 1인 1컨테이너 최적화  
 **다음 단계**: 고급 기능 (스케줄링, 이력 관리) 및 클라우드 배포
 
@@ -23,6 +24,7 @@
 4. **실시간 상호작용**: WebSocket 기반 Claude 대화
 5. **전문적 디자인**: 사무적이고 깔끔한 업무용 인터페이스
 6. **즉시 시작**: 컨테이너 재사용으로 빠른 에이전트 생성
+7. **최적화된 웹 접근**: 루트 경로(/)에서 바로 접근 가능한 사용자 친화적 URL
 
 ### 🎪 대상 사용자
 - **비개발자 전문가**: 마케터, 연구원, 분석가, 1인 기업가
@@ -333,15 +335,29 @@ uvicorn main:app --reload
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-#### 4. 정적 파일 서빙 문제
-**문제**: `/static/` 경로에서 404 에러
-- 원인: StaticFiles 마운트 설정 오류
-- 해결: `html=True` 옵션 추가
+#### 4. 웹 라우팅 구조 최적화 (2025.08.21 업데이트)
+**개선사항**: 사용자 친화적 URL 구조 및 보안 강화
+- ✅ **메인 페이지**: 루트 경로 `/`에서 직접 접근
+- ✅ **정적 자산**: `/assets/` 경로로 체계적 관리
+- ✅ **보안 강화**: `/static/` 디렉토리 노출 차단
+- ✅ **표준 준수**: 일반적인 웹 애플리케이션 구조
 
-**해결 코드**:
+**현재 구조**:
 ```python
-app.mount("/static", StaticFiles(directory=str(static_dir), html=True), name="static")
+# 메인 페이지 직접 서빙
+@app.get("/")
+async def root():
+    return FileResponse("static/index.html")
+
+# 정적 자산 경로
+app.mount("/assets", StaticFiles(directory="static"), name="assets")
 ```
+
+**URL 매핑**:
+- `/` → 메인 페이지 (index.html)
+- `/assets/styles.css` → CSS 파일
+- `/assets/common.js` → JavaScript 파일
+- `/assets/dashboard.html` → 대시보드 페이지
 
 ---
 
@@ -382,7 +398,7 @@ docker run --rm claude-workspace:latest claude --version
 ```
 
 #### 브라우저 테스트
-- ✅ **페이지 로드**: http://localhost:8000/static/index.html
+- ✅ **페이지 로드**: http://localhost:8000/ (메인 페이지 루트 접근)
 - ✅ **자동 인증**: 게스트 세션 자동 생성
 - ✅ **WebSocket 연결**: 실시간 통신 설정
 - ✅ **메시지 전송**: Claude와 정상 대화
@@ -520,7 +536,7 @@ export GOOGLE_APPLICATION_CREDENTIALS="path/to/service-account.json"
 python main.py
 
 # 7. 브라우저에서 접속
-open http://localhost:8000/static/index.html
+open http://localhost:8000/
 ```
 
 ### ☁️ GKE 배포 가이드
@@ -638,7 +654,7 @@ ws.onmessage = (event) => {
 ### 📖 사용자 가이드
 
 #### 기본 사용법
-1. **접속**: http://localhost:8000/static/index.html
+1. **접속**: http://localhost:8000/ (메인 페이지)
 2. **자동 인증**: 페이지 로드시 게스트 세션 자동 생성
 3. **에이전트 대화**: 입력창에 자연어로 요청 작성
 4. **실시간 실행**: Claude가 코드 작성 및 실행

@@ -75,7 +75,7 @@ class OnboardingManager {
             const userProfile = await this.fetchUserProfile();
             if (userProfile && userProfile.onboarding_completed) {
                 // 이미 온보딩 완료한 사용자는 대시보드로 이동
-                window.location.href = '/static/dashboard.html';
+                window.location.href = '/assets/dashboard.html';
             }
             
         } catch (error) {
@@ -200,7 +200,7 @@ class OnboardingManager {
         // 가이드 투어 모드로 대시보드 이동
         Notification.success('가이드 투어를 시작합니다!');
         setTimeout(() => {
-            window.location.href = '/static/dashboard.html?tour=true';
+            window.location.href = '/assets/dashboard.html?tour=true';
         }, 1500);
     }
     
@@ -208,7 +208,7 @@ class OnboardingManager {
         // 바로 에이전트 생성 모드로 이동
         Notification.success('첫 번째 에이전트 생성을 시작합니다!');
         setTimeout(() => {
-            window.location.href = '/static/dashboard.html?create=true';
+            window.location.href = '/assets/dashboard.html?create=true';
         }, 1500);
     }
     

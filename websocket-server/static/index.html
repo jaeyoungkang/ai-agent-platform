@@ -22,8 +22,8 @@
     </script>
     
     <!-- 통합 스타일 및 공통 라이브러리 -->
-    <link rel="stylesheet" href="styles.css">
-    <script src="common.js"></script>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/common.js"></script>
     
     <!-- Google Identity Services API -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -339,7 +339,7 @@
             
             showDocs() {
                 // 현재는 대시보드로 이동 (향후 문서 페이지 구현)
-                window.location.href = '/static/dashboard.html';
+                window.location.href = '/assets/dashboard.html';
             }
             
             async handleGoogleSignin() {
@@ -390,7 +390,7 @@
                                     Notification.success('Google 로그인이 성공했습니다!');
                                     
                                     setTimeout(() => {
-                                        window.location.href = `/static/onboarding.html?user_id=${authResult.user_id}`;
+                                        window.location.href = `/assets/onboarding.html?user_id=${authResult.user_id}`;
                                     }, 1000);
                                 } else {
                                     throw new Error('서버 인증에 실패했습니다.');

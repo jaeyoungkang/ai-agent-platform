@@ -682,16 +682,24 @@ async def get_dashboard_stats(user_id: str = Header(..., alias="X-User-Id")):
         logger.error(f"Error fetching dashboard stats for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch stats")
 
-@app.get("/")
-async def root():
-    """루트 엔드포인트 - 대시보드로 리다이렉트"""
-    return {"message": "AI Agent Platform", "dashboard": "/static/dashboard.html"}
-
 # 정적 파일 서빙 (프론트엔드)
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir), html=True), name="static")
-    logger.info(f"Static files mounted from: {static_dir}")
+    # 정적 파일들을 /assets 경로로 마운트 (CSS, JS 등)
+    app.mount("/assets", StaticFiles(directory=str(static_dir)), name="assets")
+    logger.info(f"Static assets mounted from: {static_dir}")
+
+from fastapi.responses import FileResponse
+
+@app.get("/")
+async def root():
+    """루트 엔드포인트 - 메인 페이지 직접 서빙"""
+    static_dir = Path(__file__).parent / "static"
+    index_file = static_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    else:
+        return {"message": "AI Agent Platform", "error": "index.html not found"}
 
 if __name__ == "__main__":
     import uvicorn

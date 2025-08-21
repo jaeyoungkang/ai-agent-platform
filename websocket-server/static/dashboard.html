@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 에이전트 대시보드</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="styles.css">
-    <script src="common.js"></script>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/common.js"></script>
     <style>
         /* 대시보드 특화 스타일 */
         .agent-card {
@@ -346,7 +346,7 @@
                         
                         if (workspaceResponse.ok) {
                             const workspace = await workspaceResponse.json();
-                            window.location.href = `/static/workspace.html?session=${workspace.sessionId}`;
+                            window.location.href = `/assets/workspace.html?session=${workspace.sessionId}`;
                         } else {
                             throw new Error('Failed to create workspace');
                         }
@@ -375,7 +375,7 @@
                 
                 if (response.ok) {
                     const workspace = await response.json();
-                    window.location.href = `/static/workspace.html?session=${workspace.sessionId}`;
+                    window.location.href = `/assets/workspace.html?session=${workspace.sessionId}`;
                 } else {
                     throw new Error('Failed to create workspace');
                 }
