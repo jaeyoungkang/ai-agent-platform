@@ -11,6 +11,7 @@ import logging
 import os
 import subprocess
 import shutil
+import traceback
 from typing import Dict, Optional
 from datetime import datetime
 from pathlib import Path
@@ -797,6 +798,7 @@ async def user_workspace(websocket: WebSocket, user_id: str):
                                 "timestamp": datetime.utcnow().isoformat()
                             }
                             await websocket.send_text(json.dumps(response_data))
+                            logger.debug(f"Response sent successfully to user {user_id}")
                             
                         except Exception as process_error:
                             logger.error(f"Error processing message from user {user_id}: {process_error}")
@@ -819,22 +821,28 @@ async def user_workspace(websocket: WebSocket, user_id: str):
                     break
                 except Exception as message_error:
                     logger.error(f"Error in message handling for user {user_id}: {message_error}")
+                    logger.error(f"Message error traceback: {traceback.format_exc()}")
                     # 메시지 처리 오류는 계속 진행
                     await asyncio.sleep(0.1)
-                            
+                    
+        except WebSocketDisconnect as ws_disconnect:
+            # 외부 WebSocket 연결 끊김
+            logger.info(f"WebSocket disconnected for user: {user_id}")
+            logger.info(f"WebSocket disconnect details: code={getattr(ws_disconnect, 'code', 'N/A')}, reason={getattr(ws_disconnect, 'reason', 'N/A')}")
         except Exception as loop_error:
             logger.error(f"Critical error in WebSocket loop for user {user_id}: {loop_error}")
             logger.error(f"Error type: {type(loop_error).__name__}")
             logger.error(f"Error details: {str(loop_error)}")
-            # WebSocket 관련 에러면 루프 종료
-            if "WebSocket" in str(loop_error) or "disconnect" in str(loop_error).lower():
-                logger.info(f"WebSocket-related error, exiting loop for user {user_id}")
-            # 다른 에러는 1초 대기 후 재시도
-            await asyncio.sleep(1)
+            logger.error(f"Loop error traceback: {traceback.format_exc()}")
         finally:
-            # ping task 정리
+            # ping task 정리 (연결 종료 시에만)
             if not ping_task.done():
                 ping_task.cancel()
+                try:
+                    await ping_task
+                except asyncio.CancelledError:
+                    pass
+                logger.debug(f"Ping task cancelled for user {user_id}")
                 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for user: {user_id}")
