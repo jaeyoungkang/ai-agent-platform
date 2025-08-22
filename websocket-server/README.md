@@ -59,8 +59,7 @@ python main.py
 ## 📝 API 엔드포인트
 
 ### 인증
-- `POST /api/auth/guest`: 게스트 세션 생성
-- `GET /api/auth/validate/{session_id}`: 세션 유효성 검사
+- `POST /api/auth/google`: Google OAuth 인증 (필수)
 
 ### WebSocket
 - `WS /workspace/{user_id}`: 사용자별 워크스페이스 연결

@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import google.cloud.firestore as firestore
 from claude_init import ensure_claude_ready, get_claude_status
-from auth import auth_manager, google_auth, beta_manager
+from auth import google_auth, beta_manager
 from email_service import email_service
 
 # Configure logging
@@ -524,25 +524,7 @@ async def health_check():
     """헬스체크 엔드포인트"""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat(), "version": "1.0.3", "registry": "artifact-registry"}
 
-@app.post("/api/auth/guest")
-async def create_guest_session(request: Request):
-    """게스트 세션 생성"""
-    user_agent = request.headers.get("user-agent", "")
-    session_data = await auth_manager.create_guest_session(user_agent)
-    return JSONResponse(content=session_data)
-
-@app.get("/api/auth/validate/{session_id}")
-async def validate_session(session_id: str):
-    """세션 유효성 검사"""
-    session = await auth_manager.validate_session(session_id)
-    if session:
-        return JSONResponse(content={
-            "valid": True,
-            "user_id": session["user_id"],
-            "user_type": session["user_type"]
-        })
-    else:
-        return JSONResponse(content={"valid": False}, status_code=401)
+# 게스트 인증 API 제거됨 - Google OAuth만 사용
 
 # 베타 사용자 관리 API
 @app.get("/api/beta/count")

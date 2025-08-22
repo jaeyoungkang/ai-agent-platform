@@ -55,20 +55,11 @@ class OnboardingManager {
             if (tempUserId) {
                 this.userId = tempUserId;
             } else {
-                // 게스트 세션 생성
-                try {
-                    const authData = await API.post('/api/auth/guest', {});
-                    if (authData && authData.user_id) {
-                        this.userId = authData.user_id;
-                        console.log('Created guest session:', this.userId);
-                    } else {
-                        throw new Error('Failed to create guest session');
-                    }
-                } catch (error) {
-                    console.error('Guest auth failed:', error);
-                    // 폴백: 임시 사용자 ID 생성
-                    this.userId = 'guest-user-' + Date.now();
-                }
+                // Google OAuth 필수 - 게스트 인증 제거됨
+                console.error('Google OAuth is required');
+                Notification.error('Google 로그인이 필요합니다.');
+                window.location.href = '/assets/index.html';
+                return;
             }
             
             // 사용자 프로필 로드 시도
