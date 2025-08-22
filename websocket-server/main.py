@@ -40,14 +40,24 @@ logger = logging.getLogger(__name__)
 db = firestore.Client()
 
 class ClaudeCodeProcess:
-    """실제 Claude Code CLI 프로세스 관리자"""
+    """실제 Claude Code CLI 프로세스 관리자 (영구 세션 지원)"""
     
     def __init__(self, user_id: str, session_id: str):
+        # 기존 필드 완전 유지 (호환성 보장)
         self.user_id = user_id
         self.session_id = session_id
         self.process: Optional[subprocess.Popen] = None
         self.output_buffer = []
         self.is_running = False
+        
+        # 새 영구 세션 필드 추가 (기존 코드에 영향 없음)
+        self.persistent_process = None
+        self.reader = None
+        self.writer = None
+        self.conversation_history = []
+        self.use_persistent = os.getenv('ENABLE_PERSISTENT_SESSIONS', 'true').lower() == 'true'
+        self.session_start_time = None
+        self.last_activity = None
         
     async def start(self, initial_context: str = None):
         """실제 Claude Code CLI 프로세스 시작"""
@@ -135,54 +145,102 @@ class ClaudeCodeProcess:
                 break
     
     async def send_message(self, message: str, timeout: float = 30.0) -> str:
-        """Claude Code CLI에 메시지 전송 (파이프 방식)"""
+        """Claude Code CLI에 메시지 전송 (영구 세션 또는 기존 방식)"""
         try:
-            # 간단한 파이프 통신 방식 사용
-            cmd = ['claude', 'chat']
-            
-            # 에이전트 생성 컨텍스트용 시스템 프롬프트
-            if hasattr(self, '_context') and self._context == 'agent-create':
-                system_prompt = self._get_agent_creation_prompt()
-                cmd.extend(['--append-system-prompt', system_prompt])
-            
-            logger.info(f"Executing Claude command: {' '.join(cmd)}")
-            logger.info(f"Input message: {message}")
-            
-            # subprocess 실행 (파이프 통신)
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            # 메시지 전송 및 응답 받기 (bytes로 처리)
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(input=message.encode('utf-8')),
-                timeout=timeout
-            )
-            
-            # bytes를 문자열로 변환
-            stdout = stdout_bytes.decode('utf-8') if stdout_bytes else ""
-            stderr = stderr_bytes.decode('utf-8') if stderr_bytes else ""
-            
-            logger.info(f"Claude stdout: {stdout}")
-            if stderr:
-                logger.warning(f"Claude stderr: {stderr}")
-            
-            if stdout and stdout.strip():
-                response = self._clean_response(stdout)
-                logger.info(f"Claude response for session {self.session_id}: {len(response)} chars")
-                return response
+            if self.use_persistent:
+                # 영구 세션 방식 시도
+                try:
+                    return await self._send_via_persistent_session(message, timeout)
+                except Exception as e:
+                    logger.warning(f"Persistent session failed, falling back to subprocess: {e}")
+                    # Fallback to 기존 방식
+                    return await self._send_via_subprocess(message, timeout)
             else:
-                return "Claude로부터 응답을 받지 못했습니다."
-                
-        except asyncio.TimeoutError:
-            logger.error(f"Claude response timeout for session {self.session_id}")
-            return "Claude 응답 시간이 초과되었습니다. 다시 시도해주세요."
+                # 기존 방식 사용
+                return await self._send_via_subprocess(message, timeout)
         except Exception as e:
-            logger.error(f"Error communicating with Claude: {e}")
+            logger.error(f"Error in Claude communication: {e}")
             return f"Claude 통신 오류: {str(e)}"
+    
+    async def _send_via_persistent_session(self, message: str, timeout: float = 30.0) -> str:
+        """영구 세션을 통한 메시지 전송"""
+        # 세션이 없거나 비정상이면 새로 시작
+        if not self._is_persistent_session_healthy():
+            await self._start_persistent_session()
+        
+        # 메시지 전송
+        if self.writer:
+            self.writer.write(f"{message}\n".encode('utf-8'))
+            await self.writer.drain()
+            
+            # 응답 읽기 (타임아웃 적용)
+            try:
+                response_bytes = await asyncio.wait_for(
+                    self.reader.read(8192),  # 8KB 버퍼
+                    timeout=timeout
+                )
+                response = response_bytes.decode('utf-8').strip()
+                
+                # 대화 히스토리 저장
+                self.conversation_history.append((message, response))
+                self.last_activity = datetime.now()
+                
+                if response:
+                    cleaned_response = self._clean_response(response)
+                    logger.info(f"Persistent Claude response for session {self.session_id}: {len(cleaned_response)} chars")
+                    return cleaned_response
+                else:
+                    return "Claude로부터 응답을 받지 못했습니다."
+                
+            except asyncio.TimeoutError:
+                logger.error(f"Persistent session timeout after {timeout} seconds")
+                # 세션 재시작 시도
+                await self._restart_persistent_session()
+                raise
+        else:
+            raise Exception("Persistent session writer not available")
+    
+    async def _send_via_subprocess(self, message: str, timeout: float = 30.0) -> str:
+        """기존 subprocess 방식 (완전 호환)"""
+        # 기존 코드 그대로 유지
+        cmd = ['claude', 'chat']
+        
+        # 에이전트 생성 컨텍스트용 시스템 프롬프트
+        if hasattr(self, '_context') and self._context == 'agent-create':
+            system_prompt = self._get_agent_creation_prompt()
+            cmd.extend(['--append-system-prompt', system_prompt])
+        
+        logger.info(f"Executing Claude command: {' '.join(cmd)}")
+        logger.info(f"Input message: {message}")
+        
+        # subprocess 실행 (파이프 통신)
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        # 메시지 전송 및 응답 받기 (bytes로 처리)
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            process.communicate(input=message.encode('utf-8')),
+            timeout=timeout
+        )
+        
+        # bytes를 문자열로 변환
+        stdout = stdout_bytes.decode('utf-8') if stdout_bytes else ""
+        stderr = stderr_bytes.decode('utf-8') if stderr_bytes else ""
+        
+        logger.info(f"Claude stdout: {stdout}")
+        if stderr:
+            logger.warning(f"Claude stderr: {stderr}")
+        
+        if stdout and stdout.strip():
+            response = self._clean_response(stdout)
+            logger.info(f"Claude response for session {self.session_id}: {len(response)} chars")
+            return response
+        else:
+            return "Claude로부터 응답을 받지 못했습니다."
     
     def _clean_response(self, response: str) -> str:
         """응답 정리 (프롬프트 제거 등)"""
@@ -197,8 +255,14 @@ class ClaudeCodeProcess:
         return '\n'.join(cleaned_lines).strip()
     
     def stop(self):
-        """프로세스 종료"""
+        """프로세스 종료 (기존 방식 + 영구 세션 정리)"""
         self.is_running = False
+        
+        # 영구 세션 정리 (async 작업이므로 task로 실행)
+        if hasattr(self, 'persistent_process') and self.persistent_process:
+            asyncio.create_task(self._cleanup_persistent_session())
+        
+        # 기존 프로세스 정리
         if self.process:
             try:
                 self.process.terminate()
@@ -212,6 +276,85 @@ class ClaudeCodeProcess:
             finally:
                 self.process = None
         logger.info(f"Claude process stopped for session {self.session_id}")
+    
+    async def _start_persistent_session(self):
+        """영구 Claude 세션 시작"""
+        try:
+            cmd = ['claude', 'chat', '--interactive']
+            
+            # 에이전트 생성 컨텍스트용 시스템 프롬프트
+            if hasattr(self, '_context') and self._context == 'agent-create':
+                system_prompt = self._get_agent_creation_prompt()
+                cmd.extend(['--system', system_prompt])
+            
+            logger.info(f"Starting persistent Claude session: {' '.join(cmd)}")
+            
+            # 영구 프로세스 시작
+            self.persistent_process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            self.reader = self.persistent_process.stdout
+            self.writer = self.persistent_process.stdin
+            self.session_start_time = datetime.now()
+            self.last_activity = datetime.now()
+            
+            logger.info(f"Persistent Claude session started for {self.user_id}/{self.session_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to start persistent session: {e}")
+            await self._cleanup_persistent_session()
+            raise
+    
+    def _is_persistent_session_healthy(self) -> bool:
+        """영구 세션 상태 확인"""
+        if not self.persistent_process or not self.reader or not self.writer:
+            return False
+        
+        # 프로세스가 살아있는지 확인
+        if self.persistent_process.returncode is not None:
+            return False
+        
+        # 최근 활동 시간 확인 (30분 이상 비활성화시 재시작)
+        if self.last_activity:
+            inactive_time = datetime.now() - self.last_activity
+            if inactive_time.total_seconds() > 1800:  # 30분
+                logger.info(f"Persistent session inactive for {inactive_time}, will restart")
+                return False
+        
+        return True
+    
+    async def _restart_persistent_session(self):
+        """영구 세션 재시작"""
+        logger.info(f"Restarting persistent session for {self.user_id}/{self.session_id}")
+        await self._cleanup_persistent_session()
+        await self._start_persistent_session()
+    
+    async def _cleanup_persistent_session(self):
+        """영구 세션 정리"""
+        if self.writer:
+            try:
+                self.writer.close()
+                await self.writer.wait_closed()
+            except Exception as e:
+                logger.warning(f"Error closing writer: {e}")
+            self.writer = None
+        
+        if self.persistent_process:
+            try:
+                self.persistent_process.terminate()
+                await asyncio.wait_for(self.persistent_process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Force killing persistent process")
+                self.persistent_process.kill()
+            except Exception as e:
+                logger.warning(f"Error terminating process: {e}")
+            self.persistent_process = None
+        
+        self.reader = None
 
 
 class UserWorkspace:
