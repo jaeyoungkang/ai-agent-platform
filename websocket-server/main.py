@@ -195,7 +195,8 @@ class ClaudeCodeProcess:
                 logger.error(f"Persistent session timeout after {timeout} seconds")
                 # 세션 재시작 시도
                 await self._restart_persistent_session()
-                raise
+                # fallback을 위해 예외를 다시 던짐
+                raise Exception("Persistent session timeout, will fallback to subprocess")
         else:
             raise Exception("Persistent session writer not available")
     
@@ -716,33 +717,62 @@ async def user_workspace(websocket: WebSocket, user_id: str):
         
         # 메시지 처리 루프
         while True:
-            # 사용자 메시지 수신
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-            user_message = message_data.get('message', '')
-            session_id = message_data.get('session_id')  # 세션 ID 추출
-            
-            if user_message:
-                # 세션 컨텍스트 확인
-                context = "workspace"  # 기본값
-                if session_id:
-                    workspace_doc = db.collection('workspaces').document(session_id).get()
-                    if workspace_doc.exists:
-                        workspace_data = workspace_doc.to_dict()
-                        context = workspace_data.get('context', 'workspace')
+            try:
+                # 사용자 메시지 수신
+                data = await websocket.receive_text()
                 
-                # Claude Code CLI로 메시지 전달
-                agent_response = await manager.process_user_message(
-                    user_id, user_message, context=context, session_id=session_id
-                )
+                try:
+                    message_data = json.loads(data)
+                    user_message = message_data.get('message', '')
+                    session_id = message_data.get('session_id')  # 세션 ID 추출
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON received from user {user_id}: {e}")
+                    continue
                 
-                # 응답 전송
-                response_data = {
-                    "type": "claude_response",
-                    "content": agent_response,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                await websocket.send_text(json.dumps(response_data))
+                if user_message:
+                    try:
+                        # 세션 컨텍스트 확인
+                        context = "workspace"  # 기본값
+                        if session_id:
+                            try:
+                                workspace_doc = db.collection('workspaces').document(session_id).get()
+                                if workspace_doc.exists:
+                                    workspace_data = workspace_doc.to_dict()
+                                    context = workspace_data.get('context', 'workspace')
+                            except Exception as db_error:
+                                logger.warning(f"Error accessing workspace {session_id}: {db_error}")
+                        
+                        # Claude Code CLI로 메시지 전달
+                        agent_response = await manager.process_user_message(
+                            user_id, user_message, context=context, session_id=session_id
+                        )
+                        
+                        # 응답 전송
+                        response_data = {
+                            "type": "claude_response",
+                            "content": agent_response,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                        await websocket.send_text(json.dumps(response_data))
+                        
+                    except Exception as process_error:
+                        logger.error(f"Error processing message from user {user_id}: {process_error}")
+                        # 에러가 발생해도 사용자에게 알림 전송
+                        error_response = {
+                            "type": "claude_response",
+                            "content": "죄송합니다. 메시지 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                        try:
+                            await websocket.send_text(json.dumps(error_response))
+                        except:
+                            # WebSocket 전송도 실패하면 로그만 남김
+                            logger.error(f"Failed to send error response to user {user_id}")
+                            
+            except Exception as loop_error:
+                logger.error(f"Critical error in WebSocket loop for user {user_id}: {loop_error}")
+                # 심각한 에러가 발생하면 루프를 계속 유지하려 시도
+                await asyncio.sleep(1)
                 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for user: {user_id}")
