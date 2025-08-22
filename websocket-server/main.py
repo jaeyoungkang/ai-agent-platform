@@ -28,6 +28,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 from typing import List, Optional
 import google.cloud.firestore as firestore
+from claude_init import ensure_claude_ready, get_claude_status
 from auth import auth_manager, google_auth, beta_manager
 from email_service import email_service
 
@@ -441,53 +442,26 @@ manager = ConnectionManager()
 
 @app.on_event("startup")
 async def startup_event():
-    """서버 시작 시 Claude Code CLI 환경 검증"""
-    logger.info("Validating Claude Code CLI environment...")
+    """서버 시작 시 Claude Code 빠른 검증"""
+    logger.info("Validating Claude Code (fast check)...")
     
-    # Claude Code CLI 설치 확인
-    claude_path = shutil.which('claude')
-    if not claude_path:
-        logger.warning("Claude Code CLI not found, attempting to install...")
-        try:
-            # npm으로 Claude Code 설치 시도
-            result = subprocess.run(['npm', 'install', '-g', '@anthropic-ai/claude-code'], 
-                                    capture_output=True, text=True, timeout=60)
-            if result.returncode == 0:
-                logger.info("Claude Code CLI installed successfully")
-                claude_path = shutil.which('claude')
-            else:
-                logger.error(f"Failed to install Claude Code: {result.stderr}")
-                raise Exception("Claude Code CLI installation failed")
-        except subprocess.TimeoutExpired:
-            logger.error("Claude Code installation timeout")
-            raise Exception("Claude Code installation timeout")
-        except Exception as e:
-            logger.error(f"Error installing Claude Code: {e}")
-            raise
+    # Claude Code 빠른 검증 (Docker 이미지에 이미 설치됨)
+    if not ensure_claude_ready():
+        status = get_claude_status()
+        logger.error(f"FATAL: Claude Code not available")
+        logger.error("This Docker image should have Claude Code pre-installed.")
+        logger.error("Please rebuild the image using Dockerfile.optimized")
+        raise Exception("Claude Code not found. Wrong Docker image?")
     
-    if claude_path:
-        logger.info(f"Claude Code CLI found at: {claude_path}")
-        
-        # API 키 확인
-        if not os.environ.get('ANTHROPIC_API_KEY'):
-            logger.warning("ANTHROPIC_API_KEY not set - Claude Code will not work")
-        else:
-            logger.info("ANTHROPIC_API_KEY is configured")
-        
-        # Claude Code 버전 확인
-        try:
-            result = subprocess.run(['claude', '--version'], capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                logger.info(f"Claude Code version: {result.stdout.strip()}")
-            else:
-                logger.warning(f"Could not get Claude Code version: {result.stderr}")
-        except Exception as e:
-            logger.warning(f"Error checking Claude Code version: {e}")
-    else:
-        logger.error("Claude Code CLI still not available after installation attempt")
-        raise Exception("Claude Code CLI not available")
+    status = get_claude_status()
+    logger.info(f"✓ Claude Code: {status['claude_path']}")
+    logger.info(f"✓ API Key: {'SET' if status['api_key_set'] else 'MISSING'}")
     
-    logger.info("Claude Code CLI environment validation complete")
+    if not status['api_key_set']:
+        raise Exception("ANTHROPIC_API_KEY environment variable is required")
+    
+    app.state.claude_ready = True
+    logger.info("Service ready in seconds!")
 
 @app.websocket("/workspace/{user_id}")
 async def user_workspace(websocket: WebSocket, user_id: str):

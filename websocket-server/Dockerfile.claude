@@ -1,0 +1,60 @@
+# Claude Code 통합을 위한 최적화된 Docker 이미지
+# 빌드 타임에 모든 의존성 설치 완료
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 1단계: 시스템 패키지 설치
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2단계: Node.js 20.x 설치 (LTS 버전)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3단계: npm 글로벌 패키지 디렉토리 설정 및 Claude Code 설치
+RUN npm config set prefix /usr/local \
+    && npm install -g npm@latest \
+    && npm install -g @anthropic-ai/claude-code@latest --verbose
+
+# Claude Code 설치 확인 (빌드 시 실패하면 이미지 생성 중단)
+RUN which claude && claude --version || exit 1
+
+# 4단계: Python 의존성 설치
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 5단계: 애플리케이션 코드 복사
+COPY claude_init.py .
+COPY main.py .
+COPY email_service.py .
+COPY static/ ./static/
+COPY *.py ./
+
+# 6단계: 필요한 디렉토리 생성
+RUN mkdir -p /tmp/workspace-data /app/logs /root/.cache/claude
+
+# 7단계: 권한 설정
+RUN chmod -R 755 /app && \
+    chmod -R 777 /tmp/workspace-data && \
+    chmod -R 777 /root/.cache/claude
+
+# 포트 노출
+EXPOSE 8000
+
+# 환경변수 설정
+ENV PYTHONUNBUFFERED=1
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+ENV PATH="/usr/local/bin:${PATH}"
+
+# 헬스체크 - 빠른 시작 (이미 모든 것이 설치됨)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+# 실행 명령 - 직접 Python 실행 (추가 설치 없음)
+CMD ["python", "-u", "main.py"]

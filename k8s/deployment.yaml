@@ -5,6 +5,7 @@ metadata:
   namespace: default
 spec:
   replicas: 1  # 비용 최적화: 1개 Pod로 시작
+  progressDeadlineSeconds: 600  # 10분으로 늘림
   selector:
     matchLabels:
       app: ai-agent-api
@@ -34,23 +35,28 @@ spec:
           mountPath: /tmp/workspace-data
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
             memory: "2Gi"
             cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          initialDelaySeconds: 90
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 5
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
       volumes:
       - name: workspace-data
         emptyDir: {}

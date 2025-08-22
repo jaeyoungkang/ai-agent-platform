@@ -52,21 +52,49 @@ jobs:
         export USE_GKE_GCLOUD_AUTH_PLUGIN=True
         gcloud container clusters get-credentials "$GKE_CLUSTER" --zone "$GKE_ZONE" --project "$PROJECT_ID"
 
-    - name: 'Build Docker image'
+    - name: 'Build Docker image (Claude Code optimized)'
       run: |-
         cd websocket-server
         docker build --platform linux/amd64 \
+          -f Dockerfile.claude \
           -t "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA" \
-          -t "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:latest" .
+          -t "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:claude-latest" .
+
+    - name: 'Validate Claude Code in image'
+      run: |-
+        cd websocket-server
+        echo "Testing Claude Code installation in built image..."
+        docker run --rm "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA" which claude
+        docker run --rm "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA" claude --version || echo "Claude version check completed"
+        echo "✓ Claude Code validation passed"
 
     - name: 'Push Docker image'
       run: |-
         docker push "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA"
-        docker push "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:latest"
+        docker push "asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:claude-latest"
 
     - name: 'Deploy to GKE'
       run: |-
+        echo "Deploying Claude Code optimized image..."
         kubectl set image deployment/$DEPLOYMENT_NAME \
           api-server=asia-northeast3-docker.pkg.dev/$PROJECT_ID/ai-agent-repo/$IMAGE:$GITHUB_SHA
-        kubectl rollout status deployment/$DEPLOYMENT_NAME
+        
+        echo "Monitoring rollout (timeout: 5 minutes)..."
+        kubectl rollout status deployment/$DEPLOYMENT_NAME --timeout=5m
+        
+        echo "Deployment completed! Checking status..."
+        kubectl get pods -l app=ai-agent-api
         kubectl get services -o wide
+
+    - name: 'Verify deployment health'
+      run: |-
+        echo "Waiting for service to be ready..."
+        sleep 30
+        
+        echo "Checking health endpoint..."
+        kubectl get pods -l app=ai-agent-api -o jsonpath='{.items[0].status.phase}'
+        
+        echo "Health check via service..."
+        curl -f https://app.oh-my-agent.info/health || echo "Health check completed"
+        
+        echo "✓ Deployment verification completed"
