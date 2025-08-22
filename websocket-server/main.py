@@ -56,7 +56,7 @@ class ClaudeCodeProcess:
         self.reader = None
         self.writer = None
         self.conversation_history = []
-        self.use_persistent = os.getenv('ENABLE_PERSISTENT_SESSIONS', 'false').lower() == 'true'
+        self.use_persistent = os.getenv('ENABLE_PERSISTENT_SESSIONS', 'true').lower() == 'true'
         self.session_start_time = None
         self.last_activity = None
         
@@ -174,47 +174,29 @@ class ClaudeCodeProcess:
             self.writer.write(f"{message}\n".encode('utf-8'))
             await self.writer.drain()
             
-            # 응답 읽기 (타임아웃 적용)
-            try:
-                response = await asyncio.wait_for(
-                    self._read_complete_response(),
-                    timeout=timeout
-                )
-                
-                # 대화 히스토리 저장
-                self.conversation_history.append((message, response))
-                self.last_activity = datetime.now()
-                
-                if response:
-                    cleaned_response = self._clean_response(response)
-                    logger.info(f"Persistent Claude response for session {self.session_id}: {len(cleaned_response)} chars")
-                    return cleaned_response
-                else:
-                    return "Claude로부터 응답을 받지 못했습니다."
-                
-            except asyncio.TimeoutError:
-                logger.error(f"Persistent session timeout after {timeout} seconds")
-                # 세션 재시작 시도
-                await self._restart_persistent_session()
-                # fallback을 위해 예외를 다시 던짐
-                raise Exception("Persistent session timeout, will fallback to subprocess")
+            # 응답 읽기
+            response = await asyncio.wait_for(
+                self._read_complete_response(),
+                timeout=timeout
+            )
+            
+            # 대화 히스토리 저장
+            self.conversation_history.append((message, response))
+            self.last_activity = datetime.now()
+            
+            if response and response.strip():
+                cleaned_response = self._clean_response(response)
+                return cleaned_response
+            else:
+                return "Claude로부터 응답을 받지 못했습니다."
         else:
             raise Exception("Persistent session writer not available")
     
     async def _send_via_subprocess(self, message: str, timeout: float = 30.0) -> str:
-        """개선된 subprocess 방식 (claude --print 사용으로 빠른 응답)"""
-        # --print 옵션을 사용하여 즉시 응답 받기
+        """Fallback subprocess 방식"""
         cmd = ['claude', 'chat', '--print']
         
-        # 에이전트 생성 컨텍스트용 시스템 프롬프트
-        if hasattr(self, '_context') and self._context == 'agent-create':
-            system_prompt = self._get_agent_creation_prompt()
-            cmd.extend(['--append-system-prompt', system_prompt])
-        
-        logger.info(f"Executing Claude command: {' '.join(cmd)}")
-        logger.info(f"Input message: {message}")
-        
-        # subprocess 실행 (stdin으로 메시지 전달)
+        # subprocess 실행
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
@@ -222,24 +204,16 @@ class ClaudeCodeProcess:
             stderr=asyncio.subprocess.PIPE
         )
         
-        # 메시지 전송 및 응답 받기 (stdin 통신 필수)
+        # 메시지 전송 및 응답 받기
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             process.communicate(input=message.encode('utf-8')),
             timeout=timeout
         )
         
-        # bytes를 문자열로 변환
         stdout = stdout_bytes.decode('utf-8') if stdout_bytes else ""
-        stderr = stderr_bytes.decode('utf-8') if stderr_bytes else ""
-        
-        logger.info(f"Claude stdout: {stdout}")
-        if stderr:
-            logger.warning(f"Claude stderr: {stderr}")
         
         if stdout and stdout.strip():
-            response = self._clean_response(stdout)
-            logger.info(f"Claude response for session {self.session_id}: {len(response)} chars")
-            return response
+            return self._clean_response(stdout)
         else:
             return "Claude로부터 응답을 받지 못했습니다."
     
@@ -280,35 +254,29 @@ class ClaudeCodeProcess:
     
     async def _start_persistent_session(self):
         """영구 Claude 세션 시작"""
-        try:
-            cmd = ['claude', 'chat']
-            
-            # 에이전트 생성 컨텍스트용 시스템 프롬프트
-            if hasattr(self, '_context') and self._context == 'agent-create':
-                system_prompt = self._get_agent_creation_prompt()
-                cmd.extend(['--append-system-prompt', system_prompt])
-            
-            logger.info(f"Starting persistent Claude session: {' '.join(cmd)}")
-            
-            # 영구 프로세스 시작
-            self.persistent_process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            self.reader = self.persistent_process.stdout
-            self.writer = self.persistent_process.stdin
-            self.session_start_time = datetime.now()
-            self.last_activity = datetime.now()
-            
-            logger.info(f"Persistent Claude session started for {self.user_id}/{self.session_id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to start persistent session: {e}")
+        # 기존 세션 정리
+        if self.persistent_process:
             await self._cleanup_persistent_session()
-            raise
+        
+        cmd = ['claude', 'chat']
+        
+        # 에이전트 생성 컨텍스트용 시스템 프롬프트
+        if hasattr(self, '_context') and self._context == 'agent-create':
+            system_prompt = self._get_agent_creation_prompt()
+            cmd.extend(['--append-system-prompt', system_prompt])
+        
+        # 영구 프로세스 시작
+        self.persistent_process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        self.reader = self.persistent_process.stdout
+        self.writer = self.persistent_process.stdin
+        self.session_start_time = datetime.now()
+        self.last_activity = datetime.now()
     
     def _is_persistent_session_healthy(self) -> bool:
         """영구 세션 상태 확인"""
@@ -323,7 +291,6 @@ class ClaudeCodeProcess:
         if self.last_activity:
             inactive_time = datetime.now() - self.last_activity
             if inactive_time.total_seconds() > 1800:  # 30분
-                logger.info(f"Persistent session inactive for {inactive_time}, will restart")
                 return False
         
         return True
