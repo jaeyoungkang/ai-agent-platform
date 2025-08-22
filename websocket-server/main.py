@@ -485,30 +485,36 @@ class ConnectionManager:
         return response
     
     async def _save_conversation(self, user_id: str, user_message: str, assistant_response: str, agent_id: str = None, session_id: str = None):
-        """Firestore에 대화 기록 저장"""
+        """workspaces 컬렉션에 대화 기록 직접 저장"""
+        if not session_id:
+            logger.warning(f"session_id 누락: {user_id}")
+            return
+
         try:
-            conversation_ref = db.collection('conversations').document()
-            conversation_data = {
-                'userId': user_id,
-                'agentId': agent_id,
-                'sessionId': session_id,
-                'messages': [
-                    {
-                        'role': 'user',
-                        'content': user_message,
-                        'timestamp': datetime.utcnow()
-                    },
-                    {
-                        'role': 'assistant',
-                        'content': assistant_response,
-                        'timestamp': datetime.utcnow()
-                    }
-                ],
-                'createdAt': datetime.utcnow()
+            workspace_ref = db.collection('workspaces').document(session_id)
+            
+            # 메시지 데이터 생성
+            user_message_data = {
+                'role': 'user',
+                'content': user_message,
+                'timestamp': datetime.utcnow()
             }
-            conversation_ref.set(conversation_data)
+            assistant_response_data = {
+                'role': 'assistant', 
+                'content': assistant_response,
+                'timestamp': datetime.utcnow()
+            }
+            
+            # workspaces.messages 배열에 추가
+            workspace_ref.update({
+                'messages': firestore.FieldValue.array_union([user_message_data, assistant_response_data]),
+                'lastActivityAt': datetime.utcnow()
+            })
+            
+            logger.info(f"대화 저장 완료: {session_id}")
+            
         except Exception as e:
-            logger.error(f"Error saving conversation: {e}")
+            logger.error(f"대화 저장 실패: {e}")
 
 # FastAPI 애플리케이션 초기화
 app = FastAPI(title="AI Agent Platform", version="1.1.0")
@@ -1273,7 +1279,7 @@ async def create_agent_session(user_id: str = Header(..., alias="X-User-Id")):
 
 @app.get("/api/workspace/{session_id}/restore")
 async def restore_workspace(session_id: str):
-    """기존 워크스페이스 상태 복원"""
+    """워크스페이스 상태 및 대화 기록 복원"""
     try:
         workspace_ref = db.collection('workspaces').document(session_id)
         workspace_doc = workspace_ref.get()
@@ -1284,10 +1290,12 @@ async def restore_workspace(session_id: str):
         workspace_data = workspace_doc.to_dict()
         workspace_data['sessionId'] = session_id
         
-        # 마지막 활동 시간 업데이트
-        workspace_ref.update({
-            'lastActivityAt': datetime.utcnow()
-        })
+        # 대화 기록 정렬 추가
+        messages = workspace_data.get('messages', [])
+        workspace_data['messages'] = sorted(messages, key=lambda x: x.get('timestamp', datetime.min))
+        
+        # 활동 시간 업데이트
+        workspace_ref.update({'lastActivityAt': datetime.utcnow()})
         
         return workspace_data
         

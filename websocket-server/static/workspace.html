@@ -166,36 +166,32 @@
             
             async initializeWorkspace() {
                 try {
-                    // 1. 먼저 localStorage에서 인증된 사용자 정보 확인
                     const authenticatedUser = this.getStoredUser();
                     if (authenticatedUser) {
-                        console.log('Found authenticated user in localStorage:', authenticatedUser);
                         this.userId = authenticatedUser.user_id;
                         document.getElementById('user-id').textContent = this.userId;
                     }
                     
-                    // 2. 워크스페이스 상태 복원 시도
                     const workspace = await API.get(`/api/workspace/${this.sessionId}/restore`);
                     
                     if (workspace) {
-                        // 인증된 사용자가 있으면 우선 사용, 없으면 워크스페이스 사용자 사용
                         if (!this.userId) {
                             this.userId = workspace.userId;
                             document.getElementById('user-id').textContent = this.userId;
                         }
                         
                         this.agentId = workspace.agentId;
-                        this.context = workspace.context || 'workspace';  // 컨텍스트 설정
+                        this.context = workspace.context || 'workspace';
                         
-                        // 컨텍스트에 따른 UI 초기화
+                        // 대화 기록 복원 (workspace에 이미 포함됨)
+                        this.restoreChatHistory(workspace.messages || []);
+                        
                         if (this.context === 'agent-create') {
                             this.initAgentCreationMode();
                         } else {
-                            // 기존 에이전트 정보 로드
                             await this.loadAgentInfo();
                         }
                         
-                        // WebSocket 연결
                         this.connectWebSocket();
                     } else {
                         throw new Error('Failed to restore workspace');
@@ -204,14 +200,11 @@
                     console.error('Workspace initialization failed:', error);
                     this.updateConnectionStatus('error', '워크스페이스 오류');
                     
-                    // 인증된 사용자가 있으면 바로 연결, 없으면 로그인 페이지로 이동
                     if (this.userId) {
-                        console.log('Using authenticated user for fallback connection');
                         this.connectWebSocket();
                     } else {
-                        console.log('No authenticated user found, redirecting to login');
-                        alert('로그인이 필요합니다. 로그인 페이지로 이동합니다.');
-                        window.location.href = '/assets/index.html';
+                        Notification.error('로그인이 필요합니다.');
+                        setTimeout(() => window.location.href = '/assets/', 2000);
                     }
                 }
             }
@@ -445,6 +438,27 @@
             
             scrollToBottom() {
                 this.chatArea.scrollTop = this.chatArea.scrollHeight;
+            }
+            
+            // 단순화된 대화 기록 복원
+            restoreChatHistory(messages) {
+                if (messages && messages.length > 0) {
+                    console.log(`메시지 ${messages.length}개 복원`);
+                    
+                    // 환영 메시지 제거
+                    const welcomeMessage = document.querySelector('.bg-gray-50.border');
+                    if (welcomeMessage) welcomeMessage.remove();
+                    
+                    // 메시지 복원
+                    messages.forEach(message => {
+                        const timestamp = message.timestamp._seconds ? 
+                            new Date(message.timestamp._seconds * 1000) : 
+                            new Date(message.timestamp);
+                        this.displayMessage(message.role, message.content, timestamp);
+                    });
+                    
+                    this.scrollToBottom();
+                }
             }
             
             initAgentCreationMode() {
