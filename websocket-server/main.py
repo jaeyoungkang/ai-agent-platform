@@ -742,78 +742,99 @@ async def user_workspace(websocket: WebSocket, user_id: str):
         await websocket.send_text(json.dumps(welcome_message))
         logger.info(f"Welcome message sent to user: {user_id}")
         
-        # 메시지 처리 루프
-        while True:
+        # Keep-alive ping 태스크 시작
+        async def send_ping():
             try:
-                # 사용자 메시지 수신
-                logger.debug(f"Waiting for message from user: {user_id}")
-                data = await websocket.receive_text()
-                logger.debug(f"Received message from user {user_id}: {data[:100]}...")
-                
+                while True:
+                    await asyncio.sleep(30)  # 30초마다 ping
+                    await websocket.ping()
+                    logger.debug(f"Ping sent to user: {user_id}")
+            except Exception:
+                pass  # 연결 끊어지면 자연스럽게 종료
+        
+        ping_task = asyncio.create_task(send_ping())
+        
+        try:
+            # 메시지 처리 루프
+            while True:
                 try:
-                    message_data = json.loads(data)
-                    user_message = message_data.get('message', '')
-                    session_id = message_data.get('session_id')  # 세션 ID 추출
-                    logger.info(f"Parsed message from user {user_id}: message_len={len(user_message)}, session_id={session_id}")
-                except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON received from user {user_id}: {e}")
-                    continue
-                
-                if user_message:
+                    # 사용자 메시지 수신
+                    logger.debug(f"Waiting for message from user: {user_id}")
+                    data = await websocket.receive_text()
+                    logger.debug(f"Received message from user {user_id}: {data[:100]}...")
+                    
                     try:
-                        # 세션 컨텍스트 확인
-                        context = "workspace"  # 기본값
-                        if session_id:
-                            try:
-                                workspace_doc = db.collection('workspaces').document(session_id).get()
-                                if workspace_doc.exists:
-                                    workspace_data = workspace_doc.to_dict()
-                                    context = workspace_data.get('context', 'workspace')
-                            except Exception as db_error:
-                                logger.warning(f"Error accessing workspace {session_id}: {db_error}")
-                        
-                        # Claude Code CLI로 메시지 전달
-                        agent_response = await manager.process_user_message(
-                            user_id, user_message, context=context, session_id=session_id
-                        )
-                        
-                        # 응답 전송
-                        response_data = {
-                            "type": "claude_response",
-                            "content": agent_response,
-                            "timestamp": datetime.utcnow().isoformat()
-                        }
-                        await websocket.send_text(json.dumps(response_data))
-                        
-                    except Exception as process_error:
-                        logger.error(f"Error processing message from user {user_id}: {process_error}")
-                        # 에러가 발생해도 사용자에게 알림 전송
-                        error_response = {
-                            "type": "claude_response",
-                            "content": "죄송합니다. 메시지 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
-                            "timestamp": datetime.utcnow().isoformat()
-                        }
+                        message_data = json.loads(data)
+                        user_message = message_data.get('message', '')
+                        session_id = message_data.get('session_id')  # 세션 ID 추출
+                        logger.info(f"Parsed message from user {user_id}: message_len={len(user_message)}, session_id={session_id}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON received from user {user_id}: {e}")
+                        continue
+                    
+                    if user_message:
                         try:
-                            await websocket.send_text(json.dumps(error_response))
-                        except:
-                            # WebSocket 전송도 실패하면 로그만 남김
-                            logger.error(f"Failed to send error response to user {user_id}")
+                            # 세션 컨텍스트 확인
+                            context = "workspace"  # 기본값
+                            if session_id:
+                                try:
+                                    workspace_doc = db.collection('workspaces').document(session_id).get()
+                                    if workspace_doc.exists:
+                                        workspace_data = workspace_doc.to_dict()
+                                        context = workspace_data.get('context', 'workspace')
+                                except Exception as db_error:
+                                    logger.warning(f"Error accessing workspace {session_id}: {db_error}")
                             
-            except WebSocketDisconnect as ws_disconnect:
-                # WebSocket 연결이 끊어지면 루프 종료
-                logger.info(f"WebSocket disconnected during message processing for user: {user_id}")
-                logger.info(f"WebSocket disconnect details: code={getattr(ws_disconnect, 'code', 'N/A')}, reason={getattr(ws_disconnect, 'reason', 'N/A')}")
-                break
-            except Exception as loop_error:
-                logger.error(f"Critical error in WebSocket loop for user {user_id}: {loop_error}")
-                logger.error(f"Error type: {type(loop_error).__name__}")
-                logger.error(f"Error details: {str(loop_error)}")
-                # WebSocket 관련 에러면 루프 종료
-                if "WebSocket" in str(loop_error) or "disconnect" in str(loop_error).lower():
-                    logger.info(f"WebSocket-related error, exiting loop for user {user_id}")
+                            # Claude Code CLI로 메시지 전달
+                            agent_response = await manager.process_user_message(
+                                user_id, user_message, context=context, session_id=session_id
+                            )
+                            
+                            # 응답 전송
+                            response_data = {
+                                "type": "claude_response",
+                                "content": agent_response,
+                                "timestamp": datetime.utcnow().isoformat()
+                            }
+                            await websocket.send_text(json.dumps(response_data))
+                            
+                        except Exception as process_error:
+                            logger.error(f"Error processing message from user {user_id}: {process_error}")
+                            # 에러가 발생해도 사용자에게 알림 전송
+                            error_response = {
+                                "type": "claude_response",
+                                "content": "죄송합니다. 메시지 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
+                                "timestamp": datetime.utcnow().isoformat()
+                            }
+                            try:
+                                await websocket.send_text(json.dumps(error_response))
+                            except:
+                                # WebSocket 전송도 실패하면 로그만 남김
+                                logger.error(f"Failed to send error response to user {user_id}")
+                                
+                except WebSocketDisconnect as ws_disconnect:
+                    # WebSocket 연결이 끊어지면 내부 루프 종료
+                    logger.info(f"WebSocket disconnected during message processing for user: {user_id}")
+                    logger.info(f"WebSocket disconnect details: code={getattr(ws_disconnect, 'code', 'N/A')}, reason={getattr(ws_disconnect, 'reason', 'N/A')}")
                     break
-                # 다른 에러는 1초 대기 후 재시도
-                await asyncio.sleep(1)
+                except Exception as message_error:
+                    logger.error(f"Error in message handling for user {user_id}: {message_error}")
+                    # 메시지 처리 오류는 계속 진행
+                    await asyncio.sleep(0.1)
+                            
+        except Exception as loop_error:
+            logger.error(f"Critical error in WebSocket loop for user {user_id}: {loop_error}")
+            logger.error(f"Error type: {type(loop_error).__name__}")
+            logger.error(f"Error details: {str(loop_error)}")
+            # WebSocket 관련 에러면 루프 종료
+            if "WebSocket" in str(loop_error) or "disconnect" in str(loop_error).lower():
+                logger.info(f"WebSocket-related error, exiting loop for user {user_id}")
+            # 다른 에러는 1초 대기 후 재시도
+            await asyncio.sleep(1)
+        finally:
+            # ping task 정리
+            if not ping_task.done():
+                ping_task.cancel()
                 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for user: {user_id}")
