@@ -493,6 +493,12 @@ class ConnectionManager:
         try:
             workspace_ref = db.collection('workspaces').document(session_id)
             
+            # 먼저 워크스페이스 문서 존재 여부 확인
+            workspace_doc = workspace_ref.get()
+            if not workspace_doc.exists:
+                logger.warning(f"워크스페이스 문서 없음: {session_id} - 대화 저장 스킵")
+                return
+            
             # 메시지 데이터 생성
             user_message_data = {
                 'role': 'user',
@@ -515,6 +521,7 @@ class ConnectionManager:
             
         except Exception as e:
             logger.error(f"대화 저장 실패: {e}")
+            # 대화 저장 실패해도 응답은 정상 반환되도록 예외를 삼킴
 
 # FastAPI 애플리케이션 초기화
 app = FastAPI(title="AI Agent Platform", version="1.1.0")
