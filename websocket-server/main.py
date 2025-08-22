@@ -55,7 +55,7 @@ class ClaudeCodeProcess:
         self.reader = None
         self.writer = None
         self.conversation_history = []
-        self.use_persistent = os.getenv('ENABLE_PERSISTENT_SESSIONS', 'true').lower() == 'true'
+        self.use_persistent = os.getenv('ENABLE_PERSISTENT_SESSIONS', 'false').lower() == 'true'
         self.session_start_time = None
         self.last_activity = None
         
@@ -201,9 +201,9 @@ class ClaudeCodeProcess:
             raise Exception("Persistent session writer not available")
     
     async def _send_via_subprocess(self, message: str, timeout: float = 30.0) -> str:
-        """기존 subprocess 방식 (완전 호환)"""
-        # 기존 코드 그대로 유지
-        cmd = ['claude', 'chat']
+        """개선된 subprocess 방식 (claude --print 사용으로 빠른 응답)"""
+        # --print 옵션을 사용하여 즉시 응답 받기
+        cmd = ['claude', 'chat', '--print']
         
         # 에이전트 생성 컨텍스트용 시스템 프롬프트
         if hasattr(self, '_context') and self._context == 'agent-create':
@@ -213,7 +213,7 @@ class ClaudeCodeProcess:
         logger.info(f"Executing Claude command: {' '.join(cmd)}")
         logger.info(f"Input message: {message}")
         
-        # subprocess 실행 (파이프 통신)
+        # subprocess 실행 (stdin으로 메시지 전달)
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
@@ -221,7 +221,7 @@ class ClaudeCodeProcess:
             stderr=asyncio.subprocess.PIPE
         )
         
-        # 메시지 전송 및 응답 받기 (bytes로 처리)
+        # 메시지 전송 및 응답 받기 (stdin 통신 필수)
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             process.communicate(input=message.encode('utf-8')),
             timeout=timeout
@@ -362,22 +362,47 @@ class ClaudeCodeProcess:
             raise Exception("Reader not available")
         
         response_parts = []
+        empty_lines = 0
+        line_count = 0
+        
         while True:
             try:
-                # 라인 단위로 읽기
-                line_bytes = await self.reader.readline()
+                # 라인 단위로 읽기 (최대 1초 타임아웃)
+                line_bytes = await asyncio.wait_for(self.reader.readline(), timeout=1.0)
                 if not line_bytes:
                     # EOF 도달
+                    logger.debug("EOF reached in _read_complete_response")
                     break
                 
                 line = line_bytes.decode('utf-8')
-                response_parts.append(line)
+                line_count += 1
+                logger.debug(f"Read line {line_count}: {repr(line[:50])}")
                 
-                # Claude의 프롬프트가 다시 나타나면 응답 완료
-                # "Human:" 또는 빈 줄들이 나오면 응답 끝
-                if line.strip().startswith('Human:') or (len(response_parts) > 1 and not line.strip()):
+                # 빈 줄 카운트
+                if not line.strip():
+                    empty_lines += 1
+                    # 연속된 빈 줄이 2개 이상이면 응답 종료로 간주
+                    if empty_lines >= 2:
+                        logger.debug("Found 2+ consecutive empty lines, ending response")
+                        break
+                else:
+                    empty_lines = 0
+                    response_parts.append(line)
+                
+                # Claude 프롬프트 패턴 감지
+                if line.strip().startswith('Human:') or line.strip().startswith('>'):
+                    logger.debug(f"Found prompt pattern: {repr(line.strip()[:20])}")
+                    break
+                
+                # 응답이 길어지면 강제 종료 (100줄 제한)
+                if line_count > 100:
+                    logger.warning("Response too long, forcing termination")
                     break
                     
+            except asyncio.TimeoutError:
+                # 1초 동안 새 줄이 없으면 응답 완료로 간주
+                logger.debug("Timeout waiting for next line, assuming response complete")
+                break
             except Exception as e:
                 logger.error(f"Error reading response line: {e}")
                 break
