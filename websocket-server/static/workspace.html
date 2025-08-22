@@ -268,14 +268,20 @@
                 };
                 
                 this.websocket.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    this.handleMessage(data);
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMessage(data);
+                    } catch (error) {
+                        console.error('WebSocket message parsing error:', error);
+                        console.error('Raw message data:', event.data);
+                    }
                 };
                 
                 this.websocket.onclose = (event) => {
                     this.isConnected = false;
                     this.updateConnectionStatus('disconnected', '연결 끊김');
                     console.log('WebSocket disconnected');
+                    console.log('Close code:', event.code, 'Reason:', event.reason, 'Clean:', event.wasClean);
                     
                     // Auto reconnect after 3 seconds
                     setTimeout(() => this.connectWebSocket(), 3000);
@@ -332,57 +338,67 @@
             handleMessage(data) {
                 console.log('Received message:', data);
                 
-                switch (data.type) {
-                    case 'system':
-                        this.displayMessage('system', data.content);
-                        break;
-                    case 'claude_response':
-                        this.displayMessage('claude', data.content);
-                        this.hideStatus();
-                        break;
-                    default:
-                        console.warn('Unknown message type:', data.type);
+                try {
+                    switch (data.type) {
+                        case 'system':
+                            this.displayMessage('system', data.content);
+                            break;
+                        case 'claude_response':
+                            this.displayMessage('claude', data.content);
+                            this.hideStatus();
+                            break;
+                        default:
+                            console.warn('Unknown message type:', data.type);
+                    }
+                } catch (error) {
+                    console.error('Error handling message:', error);
+                    console.error('Message data:', data);
                 }
             }
             
             displayMessage(role, content) {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'flex mb-4';
-                
-                if (role === 'user') {
-                    messageDiv.innerHTML = `
-                        <div class="flex-1"></div>
-                        <div class="max-w-md">
-                            <div class="message-user text-white rounded-lg px-4 py-3 shadow-md">
-                                <p class="text-sm font-medium mb-1">사용자</p>
-                                <p class="whitespace-pre-wrap">${this.escapeHtml(content)}</p>
+                try {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'flex mb-4';
+                    
+                    if (role === 'user') {
+                        messageDiv.innerHTML = `
+                            <div class="flex-1"></div>
+                            <div class="max-w-md">
+                                <div class="message-user text-white rounded-lg px-4 py-3 shadow-md">
+                                    <p class="text-sm font-medium mb-1">사용자</p>
+                                    <p class="whitespace-pre-wrap">${this.escapeHtml(content)}</p>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1 text-right">${this.formatTime(new Date())}</p>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1 text-right">${this.formatTime(new Date())}</p>
-                        </div>
-                    `;
-                } else if (role === 'claude') {
-                    messageDiv.innerHTML = `
-                        <div class="max-w-3xl">
-                            <div class="message-claude text-white rounded-lg px-4 py-3 shadow-md">
-                                <p class="text-sm font-medium mb-1">Claude</p>
-                                <div class="whitespace-pre-wrap">${this.formatClaudeResponse(content)}</div>
+                        `;
+                    } else if (role === 'claude') {
+                        messageDiv.innerHTML = `
+                            <div class="max-w-3xl">
+                                <div class="message-claude text-white rounded-lg px-4 py-3 shadow-md">
+                                    <p class="text-sm font-medium mb-1">Claude</p>
+                                    <div class="whitespace-pre-wrap">${this.formatClaudeResponse(content)}</div>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">${this.formatTime(new Date())}</p>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1">${this.formatTime(new Date())}</p>
-                        </div>
-                        <div class="flex-1"></div>
-                    `;
-                } else if (role === 'system') {
-                    messageDiv.innerHTML = `
-                        <div class="w-full">
-                            <div class="message-system text-white rounded-lg px-4 py-3 shadow-md text-center max-w-md mx-auto">
-                                <p class="text-sm">${this.escapeHtml(content)}</p>
+                            <div class="flex-1"></div>
+                        `;
+                    } else if (role === 'system') {
+                        messageDiv.innerHTML = `
+                            <div class="w-full">
+                                <div class="message-system text-white rounded-lg px-4 py-3 shadow-md text-center max-w-md mx-auto">
+                                    <p class="text-sm">${this.escapeHtml(content)}</p>
+                                </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                    }
+                    
+                    this.chatArea.appendChild(messageDiv);
+                    this.scrollToBottom();
+                } catch (error) {
+                    console.error('Error displaying message:', error);
+                    console.error('Role:', role, 'Content:', content);
                 }
-                
-                this.chatArea.appendChild(messageDiv);
-                this.scrollToBottom();
             }
             
             formatClaudeResponse(content) {
@@ -394,11 +410,28 @@
             }
             
             escapeHtml(text) {
-                return Utils.escapeHtml(text);
+                try {
+                    return Utils.escapeHtml(text);
+                } catch (error) {
+                    console.error('Error escaping HTML:', error);
+                    // Fallback to basic HTML escaping
+                    return String(text)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                }
             }
             
             formatTime(date) {
-                return Utils.formatTime(date);
+                try {
+                    return Utils.formatTime(date);
+                } catch (error) {
+                    console.error('Error formatting time:', error);
+                    // Fallback to basic time formatting
+                    return date.toLocaleTimeString();
+                }
             }
             
             showStatus(message) {
