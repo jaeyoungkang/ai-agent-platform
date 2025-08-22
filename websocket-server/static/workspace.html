@@ -187,6 +187,11 @@
                         this.agentId = workspace.agentId;
                         this.context = workspace.context || 'workspace';  // 컨텍스트 설정
                         
+                        // 대화 기록 복원
+                        if (workspace.messages && workspace.messages.length > 0) {
+                            this.restoreConversationHistory(workspace.messages);
+                        }
+                        
                         // 컨텍스트에 따른 UI 초기화
                         if (this.context === 'agent-create') {
                             this.initAgentCreationMode();
@@ -356,10 +361,13 @@
                 }
             }
             
-            displayMessage(role, content) {
+            displayMessage(role, content, timestamp = null) {
                 try {
                     const messageDiv = document.createElement('div');
                     messageDiv.className = 'flex mb-4';
+                    
+                    // timestamp가 있으면 사용, 없으면 현재 시간
+                    const messageTime = timestamp ? new Date(timestamp.seconds * 1000) : new Date();
                     
                     if (role === 'user') {
                         messageDiv.innerHTML = `
@@ -369,17 +377,17 @@
                                     <p class="text-sm font-medium mb-1">사용자</p>
                                     <p class="whitespace-pre-wrap">${this.escapeHtml(content)}</p>
                                 </div>
-                                <p class="text-xs text-gray-500 mt-1 text-right">${this.formatTime(new Date())}</p>
+                                <p class="text-xs text-gray-500 mt-1 text-right">${this.formatTime(messageTime)}</p>
                             </div>
                         `;
-                    } else if (role === 'claude') {
+                    } else if (role === 'claude' || role === 'assistant') {
                         messageDiv.innerHTML = `
                             <div class="max-w-3xl">
                                 <div class="message-claude text-white rounded-lg px-4 py-3 shadow-md">
                                     <p class="text-sm font-medium mb-1">Claude</p>
                                     <div class="whitespace-pre-wrap">${this.formatClaudeResponse(content)}</div>
                                 </div>
-                                <p class="text-xs text-gray-500 mt-1">${this.formatTime(new Date())}</p>
+                                <p class="text-xs text-gray-500 mt-1">${this.formatTime(messageTime)}</p>
                             </div>
                             <div class="flex-1"></div>
                         `;
@@ -447,6 +455,28 @@
                 this.chatArea.scrollTop = this.chatArea.scrollHeight;
             }
             
+            restoreConversationHistory(messages) {
+                console.log(`Restoring ${messages.length} messages from conversation history`);
+                
+                // 기존 환영 메시지 제거
+                const welcomeMessage = this.chatArea.querySelector('div:first-child');
+                if (welcomeMessage && welcomeMessage.innerHTML.includes('워크스페이스 시작')) {
+                    welcomeMessage.remove();
+                }
+                
+                // 메시지들을 순서대로 표시
+                messages.forEach(message => {
+                    try {
+                        this.displayMessage(message.role, message.content, message.timestamp);
+                    } catch (error) {
+                        console.error('Error restoring message:', error, message);
+                    }
+                });
+                
+                // 스크롤을 맨 아래로 이동
+                this.scrollToBottom();
+            }
+            
             initAgentCreationMode() {
                 // 에이전트 생성 모드 UI 초기화
                 console.log('Initializing agent creation mode');
@@ -457,8 +487,10 @@
                     agentName.textContent = '새 에이전트 생성';
                 }
                 
-                // 환영 메시지 추가
-                this.displayMessage('system', '안녕하세요! AI 에이전트를 만들어드릴게요. 어떤 작업을 자동화하고 싶으신가요?');
+                // 대화 기록이 없을 때만 환영 메시지 추가
+                if (this.chatArea.children.length <= 1) {
+                    this.displayMessage('system', '안녕하세요! AI 에이전트를 만들어드릴게요. 어떤 작업을 자동화하고 싶으신가요?');
+                }
                 
                 // 사용자 ID 표시
                 const userIdElement = document.getElementById('user-id');

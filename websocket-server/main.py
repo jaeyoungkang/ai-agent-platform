@@ -485,30 +485,88 @@ class ConnectionManager:
         return response
     
     async def _save_conversation(self, user_id: str, user_message: str, assistant_response: str, agent_id: str = None, session_id: str = None):
-        """Firestore에 대화 기록 저장"""
+        """Firestore에 대화 기록 저장 (개선된 통합 방식)"""
         try:
-            conversation_ref = db.collection('conversations').document()
-            conversation_data = {
-                'userId': user_id,
-                'agentId': agent_id,
-                'sessionId': session_id,
-                'messages': [
-                    {
-                        'role': 'user',
-                        'content': user_message,
-                        'timestamp': datetime.utcnow()
-                    },
-                    {
-                        'role': 'assistant',
-                        'content': assistant_response,
-                        'timestamp': datetime.utcnow()
-                    }
-                ],
-                'createdAt': datetime.utcnow()
-            }
-            conversation_ref.set(conversation_data)
+            # 메시지 객체 생성
+            messages = [
+                {
+                    'role': 'user',
+                    'content': user_message,
+                    'timestamp': datetime.utcnow()
+                },
+                {
+                    'role': 'assistant', 
+                    'content': assistant_response,
+                    'timestamp': datetime.utcnow()
+                }
+            ]
+            
+            # 세션 기반 대화 기록 (통합 방식)
+            if session_id:
+                try:
+                    workspace_ref = db.collection('workspaces').document(session_id)
+                    workspace_doc = workspace_ref.get()
+                    
+                    if workspace_doc.exists:
+                        # 기존 workspace에 메시지 추가 (ArrayUnion 사용)
+                        workspace_ref.update({
+                            'messages': firestore.ArrayUnion(messages),
+                            'lastActivityAt': datetime.utcnow()
+                        })
+                        logger.info(f"Messages added to workspace {session_id} using ArrayUnion")
+                    else:
+                        logger.warning(f"Workspace {session_id} not found, creating new workspace")
+                        # 워크스페이스가 없으면 새로 생성
+                        workspace_data = {
+                            'sessionId': session_id,
+                            'userId': user_id,
+                            'agentId': agent_id,
+                            'status': 'active',
+                            'createdAt': datetime.utcnow(),
+                            'lastActivityAt': datetime.utcnow(),
+                            'messages': messages,
+                            'context': 'workspace'
+                        }
+                        workspace_ref.set(workspace_data)
+                        
+                except Exception as workspace_error:
+                    logger.error(f"Error updating workspace {session_id}: {workspace_error}")
+                    # Fallback to conversations collection
+                    await self._save_to_conversations_collection(user_id, user_message, assistant_response, agent_id, session_id)
+            else:
+                # 세션 ID가 없으면 기존 conversations 컬렉션 사용
+                await self._save_to_conversations_collection(user_id, user_message, assistant_response, agent_id, session_id)
+                
         except Exception as e:
             logger.error(f"Error saving conversation: {e}")
+            # 최종 fallback - 항상 conversations에 저장
+            try:
+                await self._save_to_conversations_collection(user_id, user_message, assistant_response, agent_id, session_id)
+            except Exception as fallback_error:
+                logger.error(f"Fallback conversation save also failed: {fallback_error}")
+    
+    async def _save_to_conversations_collection(self, user_id: str, user_message: str, assistant_response: str, agent_id: str = None, session_id: str = None):
+        """기존 conversations 컬렉션에 저장 (호환성 보장)"""
+        conversation_ref = db.collection('conversations').document()
+        conversation_data = {
+            'userId': user_id,
+            'agentId': agent_id,
+            'sessionId': session_id,
+            'messages': [
+                {
+                    'role': 'user',
+                    'content': user_message,
+                    'timestamp': datetime.utcnow()
+                },
+                {
+                    'role': 'assistant',
+                    'content': assistant_response,
+                    'timestamp': datetime.utcnow()
+                }
+            ],
+            'createdAt': datetime.utcnow()
+        }
+        conversation_ref.set(conversation_data)
 
 # FastAPI 애플리케이션 초기화
 app = FastAPI(title="AI Agent Platform", version="1.1.0")
@@ -1273,7 +1331,7 @@ async def create_agent_session(user_id: str = Header(..., alias="X-User-Id")):
 
 @app.get("/api/workspace/{session_id}/restore")
 async def restore_workspace(session_id: str):
-    """기존 워크스페이스 상태 복원"""
+    """기존 워크스페이스 상태 복원 (대화 기록 포함)"""
     try:
         workspace_ref = db.collection('workspaces').document(session_id)
         workspace_doc = workspace_ref.get()
@@ -1283,6 +1341,18 @@ async def restore_workspace(session_id: str):
         
         workspace_data = workspace_doc.to_dict()
         workspace_data['sessionId'] = session_id
+        
+        # 대화 기록 정렬 (타임스탬프 기준)
+        messages = workspace_data.get('messages', [])
+        if messages:
+            try:
+                # 각 메시지의 timestamp를 기준으로 정렬
+                sorted_messages = sorted(messages, key=lambda x: x.get('timestamp', datetime.min))
+                workspace_data['messages'] = sorted_messages
+                logger.info(f"Restored {len(sorted_messages)} messages for session {session_id}")
+            except Exception as sort_error:
+                logger.warning(f"Error sorting messages for session {session_id}: {sort_error}")
+                # 정렬 실패해도 원래 메시지는 유지
         
         # 마지막 활동 시간 업데이트
         workspace_ref.update({
