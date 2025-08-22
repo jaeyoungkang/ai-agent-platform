@@ -706,6 +706,7 @@ async def user_workspace(websocket: WebSocket, user_id: str):
     try:
         await manager.connect(websocket, user_id)
         logger.info(f"WebSocket connected successfully for user: {user_id}")
+        logger.info(f"WebSocket client info: {websocket.client}")
         
         # 환영 메시지 전송
         welcome_message = {
@@ -714,17 +715,21 @@ async def user_workspace(websocket: WebSocket, user_id: str):
             "timestamp": datetime.utcnow().isoformat()
         }
         await websocket.send_text(json.dumps(welcome_message))
+        logger.info(f"Welcome message sent to user: {user_id}")
         
         # 메시지 처리 루프
         while True:
             try:
                 # 사용자 메시지 수신
+                logger.debug(f"Waiting for message from user: {user_id}")
                 data = await websocket.receive_text()
+                logger.debug(f"Received message from user {user_id}: {data[:100]}...")
                 
                 try:
                     message_data = json.loads(data)
                     user_message = message_data.get('message', '')
                     session_id = message_data.get('session_id')  # 세션 ID 추출
+                    logger.info(f"Parsed message from user {user_id}: message_len={len(user_message)}, session_id={session_id}")
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON received from user {user_id}: {e}")
                     continue
@@ -769,12 +774,15 @@ async def user_workspace(websocket: WebSocket, user_id: str):
                             # WebSocket 전송도 실패하면 로그만 남김
                             logger.error(f"Failed to send error response to user {user_id}")
                             
-            except WebSocketDisconnect:
+            except WebSocketDisconnect as ws_disconnect:
                 # WebSocket 연결이 끊어지면 루프 종료
                 logger.info(f"WebSocket disconnected during message processing for user: {user_id}")
+                logger.info(f"WebSocket disconnect details: code={getattr(ws_disconnect, 'code', 'N/A')}, reason={getattr(ws_disconnect, 'reason', 'N/A')}")
                 break
             except Exception as loop_error:
                 logger.error(f"Critical error in WebSocket loop for user {user_id}: {loop_error}")
+                logger.error(f"Error type: {type(loop_error).__name__}")
+                logger.error(f"Error details: {str(loop_error)}")
                 # WebSocket 관련 에러면 루프 종료
                 if "WebSocket" in str(loop_error) or "disconnect" in str(loop_error).lower():
                     logger.info(f"WebSocket-related error, exiting loop for user {user_id}")
