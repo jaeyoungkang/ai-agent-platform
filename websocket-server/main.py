@@ -769,9 +769,17 @@ async def user_workspace(websocket: WebSocket, user_id: str):
                             # WebSocket 전송도 실패하면 로그만 남김
                             logger.error(f"Failed to send error response to user {user_id}")
                             
+            except WebSocketDisconnect:
+                # WebSocket 연결이 끊어지면 루프 종료
+                logger.info(f"WebSocket disconnected during message processing for user: {user_id}")
+                break
             except Exception as loop_error:
                 logger.error(f"Critical error in WebSocket loop for user {user_id}: {loop_error}")
-                # 심각한 에러가 발생하면 루프를 계속 유지하려 시도
+                # WebSocket 관련 에러면 루프 종료
+                if "WebSocket" in str(loop_error) or "disconnect" in str(loop_error).lower():
+                    logger.info(f"WebSocket-related error, exiting loop for user {user_id}")
+                    break
+                # 다른 에러는 1초 대기 후 재시도
                 await asyncio.sleep(1)
                 
     except WebSocketDisconnect:
