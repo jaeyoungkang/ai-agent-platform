@@ -175,11 +175,10 @@ class ClaudeCodeProcess:
             
             # 응답 읽기 (타임아웃 적용)
             try:
-                response_bytes = await asyncio.wait_for(
-                    self.reader.read(8192),  # 8KB 버퍼
+                response = await asyncio.wait_for(
+                    self._read_complete_response(),
                     timeout=timeout
                 )
-                response = response_bytes.decode('utf-8').strip()
                 
                 # 대화 히스토리 저장
                 self.conversation_history.append((message, response))
@@ -280,12 +279,12 @@ class ClaudeCodeProcess:
     async def _start_persistent_session(self):
         """영구 Claude 세션 시작"""
         try:
-            cmd = ['claude', 'chat', '--interactive']
+            cmd = ['claude', 'chat']
             
             # 에이전트 생성 컨텍스트용 시스템 프롬프트
             if hasattr(self, '_context') and self._context == 'agent-create':
                 system_prompt = self._get_agent_creation_prompt()
-                cmd.extend(['--system', system_prompt])
+                cmd.extend(['--append-system-prompt', system_prompt])
             
             logger.info(f"Starting persistent Claude session: {' '.join(cmd)}")
             
@@ -355,6 +354,40 @@ class ClaudeCodeProcess:
             self.persistent_process = None
         
         self.reader = None
+    
+    async def _read_complete_response(self) -> str:
+        """Claude interactive 세션에서 완전한 응답 읽기"""
+        if not self.reader:
+            raise Exception("Reader not available")
+        
+        response_parts = []
+        while True:
+            try:
+                # 라인 단위로 읽기
+                line_bytes = await self.reader.readline()
+                if not line_bytes:
+                    # EOF 도달
+                    break
+                
+                line = line_bytes.decode('utf-8')
+                response_parts.append(line)
+                
+                # Claude의 프롬프트가 다시 나타나면 응답 완료
+                # "Human:" 또는 빈 줄들이 나오면 응답 끝
+                if line.strip().startswith('Human:') or (len(response_parts) > 1 and not line.strip()):
+                    break
+                    
+            except Exception as e:
+                logger.error(f"Error reading response line: {e}")
+                break
+        
+        # 응답 조합 및 정리
+        full_response = ''.join(response_parts)
+        # 마지막에 나온 Human: 프롬프트 제거
+        if 'Human:' in full_response:
+            full_response = full_response.split('Human:')[0]
+        
+        return full_response.strip()
 
 
 class UserWorkspace:
