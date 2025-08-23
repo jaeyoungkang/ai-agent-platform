@@ -19,7 +19,7 @@
 ### 플랫폼 접근
 김투자가 동료 추천으로 AI Agent Platform을 알게 되어 웹사이트에 접속합니다.
 
-**브라우저**: `http://34.64.193.42/static/dashboard.html`
+**브라우저**: `httpㄴ://oh-my-agent.info/dashboard.html`
 
 **첫 화면 경험**:
 ```
