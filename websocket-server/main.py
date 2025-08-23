@@ -56,7 +56,7 @@ class ClaudeCodeProcess:
         self.reader = None
         self.writer = None
         self.conversation_history = []
-        self.use_persistent = os.getenv('ENABLE_PERSISTENT_SESSIONS', 'true').lower() == 'true'
+        self.use_persistent = os.getenv('ENABLE_PERSISTENT_SESSIONS', 'false').lower() == 'true'
         self.session_start_time = None
         self.last_activity = None
         
@@ -146,21 +146,18 @@ class ClaudeCodeProcess:
                 break
     
     async def send_message(self, message: str, timeout: float = 30.0) -> str:
-        """Claude Code CLI에 메시지 전송 (영구 세션 또는 기존 방식)"""
+        """Claude Code CLI에 메시지 전송 (subprocess 방식 우선)"""
         try:
-            if self.use_persistent:
-                # 영구 세션 방식 시도
-                try:
-                    return await self._send_via_persistent_session(message, timeout)
-                except Exception as e:
-                    logger.warning(f"Persistent session failed, falling back to subprocess: {e}")
-                    # Fallback to 기존 방식
-                    return await self._send_via_subprocess(message, timeout)
-            else:
-                # 기존 방식 사용
-                return await self._send_via_subprocess(message, timeout)
+            logger.info(f"Sending message to Claude (session: {self.session_id}): {message[:50]}...")
+            
+            # 기본적으로 subprocess 방식 사용 (더 안정적)
+            response = await self._send_via_subprocess(message, timeout)
+            
+            logger.info(f"Received Claude response (session: {self.session_id}): {response[:50]}...")
+            return response
+            
         except Exception as e:
-            logger.error(f"Error in Claude communication: {e}")
+            logger.error(f"Error in Claude communication (session: {self.session_id}): {e}")
             return f"Claude 통신 오류: {str(e)}"
     
     async def _send_via_persistent_session(self, message: str, timeout: float = 30.0) -> str:
